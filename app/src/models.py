@@ -103,4 +103,3 @@ class TaskHistory:
 
     def append(self, task: Task):
         self._tasks.append(task)
-
