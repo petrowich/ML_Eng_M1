@@ -1,0 +1,170 @@
+@startuml
+
+enum UserRole {
+    ADMIN
+    USER
+}
+
+enum MLTaskStatus {
+    NEW
+    RUNNING
+    STOPPED
+    COMPLETED
+    FAILED
+}
+
+enum TransactionType {
+    DEPOSIT
+    WITHDRAW
+}
+
+enum TransactionStatus {
+    PENDING
+    CANCELLED
+    PROCESSING
+    REJECTED
+    COMPLETED
+    REFUNDED
+}
+
+class UserAuth {
+    - _login : str
+    - _pwd_hash : str
+    + __init__(login, pwd_hash)
+}
+
+abstract class BaseUser {
+    - _id : int
+    - _auth : UserAuth
+    - _name : str
+    - _email : str
+    - _role : UserRole
+    - _created : datetime
+    ..
+    + user_id() : int
+    + auth() : UserAuth
+    + name() : str
+    + name(name : str)
+    + email() : str
+    + email(email : str)
+    + role() : UserRole
+    + role(role : UserRole)
+    + created() : datetime
+}
+
+class Admin {
+    + __init__(user_id, auth, name, email)
+}
+
+class User {
+    - _balance : Decimal
+    ..
+    + __init__(user_id, auth, name, email, balance = 0.0)
+    + balance() : Decimal
+    + balance(balance : Decimal)
+}
+
+abstract class BaseMLModel {
+    - _id : int
+    - _name : str
+    - _description : str
+    - _prediction_cost : Decimal
+    ..
+    + model_id() : int
+    + name() : str
+    + name(value : str)
+    + description() : str
+    + description(value : str)
+    + prediction_cost() : Decimal
+    + prediction_cost(prediction_cost : Decimal)
+    ..
+    + {abstract} predict(request) : Prediction
+}
+
+class Prediction {
+    - _id : int
+    - _result
+    - _cost : Decimal
+    ..
+    + prediction_id() : int
+    + result()
+    + cost() : Decimal
+    + cost(cost : Decimal)
+}
+
+class MLTask {
+    - _id : int
+    - _user : BaseUser
+    - _model : BaseMLModel
+    - _request
+    - _status : MLTaskStatus
+    - _duration_ms : int
+    - _prediction : Prediction
+    - _transaction : Transaction
+    - _timestamp : datetime
+    ..
+    + task_id() : int
+    + user() : BaseUser
+    + model() : BaseMLModel
+    + request()
+    + status() : MLTaskStatus
+    + status(status : MLTaskStatus)
+    + duration_ms() : int
+    + duration_ms(value : int)
+    + prediction() : Prediction
+    + transaction() : Transaction
+    + transaction(transaction : Transaction)
+    + timestamp() : datetime
+    ..
+    + run()
+}
+
+class Transaction {
+    - _id : UUID
+    - _user : User
+    - _type : TransactionType
+    - _status : TransactionStatus
+    - _amount : Decimal
+    - _balance : Decimal
+    - _timestamp : datetime
+    ..
+    + transaction_id() : UUID
+    + user() : User
+    + transaction_type() : TransactionType
+    + amount() : Decimal
+    + balance() : Decimal
+    + timestamp() : datetime
+   ..
+    + apply()
+    + cancel()
+    + refund()
+}
+
+class MLTaskHistory {
+    - _task_storage : list[MLTask]
+    ..
+    + append(task : MLTask)
+    + get_tasks_by_user(user : BaseUser) : list[MLTask]
+}
+
+MLTaskStatus -- MLTask
+UserRole -- BaseUser
+TransactionType -- Transaction
+TransactionStatus -- Transaction
+
+BaseUser <|-- Admin
+BaseUser <|-- User
+BaseUser *-- UserAuth
+
+MLTask --> BaseUser
+MLTask --> BaseMLModel
+MLTask --> Prediction
+MLTask --> Transaction
+
+BaseMLModel --> Prediction
+
+Transaction --> User
+
+MLTaskHistory o-- MLTask
+
+@enduml
