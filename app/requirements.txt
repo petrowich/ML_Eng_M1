@@ -1,1 +1,4 @@
-Flask
+SQLAlchemy
+sqlmodel
+pydantic-settings
+psycopg[binary,pool]
