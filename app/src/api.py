@@ -15,16 +15,19 @@ from routes.v0.transaction import transaction_route
 
 settings = get_settings()
 
+APP_NAME = settings.APP_NAME or "unnamed ML service"
+APP_DESCRIPTION = settings.APP_DESCRIPTION or ""
+APP_PORT = settings.APP_PORT or 8080
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         app.state.cache = {}
         logger.info("initializing db")
-        init_db(drop_all=False, populate=True)
+        init_db(drop_all=False)
         logger.info("db has been initialized")
     except Exception as e:
         logger.error(f"start up failed: {e}")
@@ -35,8 +38,8 @@ async def lifespan(app: FastAPI):
     logger.info("shutting down")
 
 app = FastAPI(
-    title = settings.APP_NAME,
-    description=settings.APP_DESCRIPTION,
+    title = APP_NAME,
+    description=APP_DESCRIPTION,
     version="0.1",
     docs_url="/api/v0/docs",
     redoc_url="/api/v0/redoc",
@@ -62,7 +65,7 @@ if __name__ == '__main__':
     uvicorn.run(
         'api:app',
         host='0.0.0.0',
-        port=settings.APP_PORT,
+        port=APP_PORT,
         reload=True,
         workers=1,
         log_level="debug",

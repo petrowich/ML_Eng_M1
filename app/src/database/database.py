@@ -7,7 +7,7 @@ from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType, TransactionStatus
 from models.user import User, UserRole, UserAuth
-from services.ml_model import create_ml_model
+from services.ml_model import create_ml_models
 from services.ml_task import create_ml_tasks
 from services.prediction import create_predictions
 from services.transaction import create_transactions
@@ -35,14 +35,14 @@ def get_session():
     with Session(engine) as session:
         yield session
 
-def init_db(drop_all: bool = False, populate: bool = False):
+def init_db(drop_all: bool = False):
     try:
         engine = get_engine()
         new_db = drop_all or is_new_db(engine)
         if drop_all:
             SQLModel.metadata.drop_all(engine)
         SQLModel.metadata.create_all(engine)
-        if populate and new_db:
+        if new_db:
             populate_db(engine)
     except Exception:
         raise
@@ -59,9 +59,12 @@ def populate_db(engine):
         logging.info(f"populating db")
 
         # МЛ модель
-        ml_model = MLModel(name='ML Model', description='The Greatest ML Model Ever', prediction_cost=1.05)
+        ml_model_1 = MLModel(name='ML Model', reference='MODEL_05', description='The Greatest ML Model Ever', prediction_cost=1.05)
+        ml_model_2 = MLModel(name='ML Model', reference='MODEL_10', description='Retrained Greatest ML Model', prediction_cost=1.75)
+        ml_model_3 = MLModel(name='ML Model', reference='MODEL_25', description='Yet Another ML Model', prediction_cost=0.50)
+        ml_models = [ml_model_1, ml_model_2, ml_model_3]
         with Session(engine) as session:
-            create_ml_model(ml_model, session)
+            create_ml_models(ml_models, session)
 
         # пользователь с ролю админа
         admin = User(name='Admin', email='admin@admins.ml', role=UserRole.ADMIN, auth=UserAuth(login='admin', pwd_hash='admin'))
@@ -91,12 +94,12 @@ def populate_db(engine):
         deposit_03 = Transaction(user=third_user, type=TransactionType.DEPOSIT, status=TransactionStatus.COMPLETED, amount=150, balance=195.05)
 
         withdraw_01 = Transaction(user=first_user, type=TransactionType.WITHDRAW, status=TransactionStatus.CANCELLED, amount=1.05, balance=150)
-        withdraw_02 = Transaction(user=second_user, type=TransactionType.WITHDRAW, status=TransactionStatus.COMPLETED, amount=1.05, balance=185.40)
-        withdraw_03 = Transaction(user=second_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=1.05, balance=185.40)
-        withdraw_04 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.CANCELLED, amount=1.05, balance=197.15)
+        withdraw_02 = Transaction(user=second_user, type=TransactionType.WITHDRAW, status=TransactionStatus.COMPLETED, amount=1.75, balance=185.40)
+        withdraw_03 = Transaction(user=second_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=0.50, balance=185.40)
+        withdraw_04 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.CANCELLED, amount=1.75, balance=197.15)
         withdraw_05 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.COMPLETED, amount=1.05, balance=196.10)
-        withdraw_06 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=1.05, balance=196.10)
-        withdraw_07 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=1.05, balance=195.05)
+        withdraw_06 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=0.50, balance=196.10)
+        withdraw_07 = Transaction(user=third_user, type=TransactionType.WITHDRAW, status=TransactionStatus.PENDING, amount=1.75, balance=195.05)
 
         transactions = [deposit_01, deposit_02, deposit_03,
                         withdraw_01, withdraw_02, withdraw_03, withdraw_04, withdraw_05, withdraw_06, withdraw_07]
@@ -104,13 +107,13 @@ def populate_db(engine):
             create_transactions(transactions, session)
 
         # задачи для МЛ Модели
-        task_01 = MLTask(user=first_user, model=ml_model, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
-        task_02 = MLTask(user=second_user, model=ml_model, request="first request of second user", transaction=withdraw_02, status=MLTaskStatus.COMPLETED, prediction=prediction_01)
-        task_03 = MLTask(user=second_user, model=ml_model, request="second request of second user", transaction=withdraw_03, status=MLTaskStatus.RUNNING)
-        task_04 = MLTask(user=third_user, model=ml_model, request="first request of third user", transaction=withdraw_04, status=MLTaskStatus.STOPPED)
-        task_05 = MLTask(user=third_user, model=ml_model, request="second request of third user", transaction=withdraw_05, status=MLTaskStatus.COMPLETED, prediction=prediction_02)
-        task_06 = MLTask(user=third_user, model=ml_model, request="third request of third user", transaction=withdraw_06, status=MLTaskStatus.COMPLETED, prediction=prediction_03)
-        task_07 = MLTask(user=third_user, model=ml_model, request="fourth request of third user", transaction=withdraw_07, status=MLTaskStatus.RUNNING)
+        task_01 = MLTask(user=first_user, model=ml_model_1, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
+        task_02 = MLTask(user=second_user, model=ml_model_2, request="first request of second user", transaction=withdraw_02, status=MLTaskStatus.COMPLETED, prediction=prediction_01)
+        task_03 = MLTask(user=second_user, model=ml_model_3, request="second request of second user", transaction=withdraw_03, status=MLTaskStatus.RUNNING)
+        task_04 = MLTask(user=third_user, model=ml_model_1, request="first request of third user", transaction=withdraw_04, status=MLTaskStatus.STOPPED)
+        task_05 = MLTask(user=third_user, model=ml_model_2, request="second request of third user", transaction=withdraw_05, status=MLTaskStatus.COMPLETED, prediction=prediction_02)
+        task_06 = MLTask(user=third_user, model=ml_model_3, request="third request of third user", transaction=withdraw_06, status=MLTaskStatus.COMPLETED, prediction=prediction_03)
+        task_07 = MLTask(user=third_user, model=ml_model_1, request="fourth request of third user", transaction=withdraw_07, status=MLTaskStatus.RUNNING)
 
         ml_tasks = [task_01, task_02, task_03, task_04, task_05, task_06, task_07]
         with Session(engine) as session:

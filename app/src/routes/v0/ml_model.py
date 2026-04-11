@@ -34,6 +34,39 @@ async def get_ml_model(model_id: int = Path(..., description="model id"),
         logger.error(f"Error getting ML model: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get the ML model by id")
 
+
+class RegisterMLModelRequest(BaseModel):
+    model: str = Field(..., min_length=1, max_length=50, description="ML model external reference")
+    name: str = Field(..., max_length=255, description="ML model name")
+    description: str = Field(..., max_length=2000, description="ML model description")
+    prediction_cost: float = Field(..., gt=0, description="prediction cost")
+
+@model_route.post("/register",
+                  response_model=MLModel,
+                  status_code=status.HTTP_201_CREATED,
+                  summary="Register ML Model",
+                  description="Register new or update existent ML model")
+async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLTask:
+    try:
+        ml_model = services.ml_model.get_ml_model_by_reference(request.model, session)
+
+        if not ml_model:
+            ml_model = MLModel(reference=request.model)
+
+        ml_model.name = request.name
+        ml_model.description = request.description
+        ml_model.prediction_cost = Decimal(request.prediction_cost)
+
+        if ml_model.id:
+            ml_model = services.ml_model.update_ml_model(ml_model, session)
+        else:
+            ml_model = services.ml_model.create_ml_model(ml_model, session)
+
+        return ml_model
+    except Exception as e:
+        logger.error(f"Error registering ML model: '{str(e)}'")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to registere ML model")
+
 @model_route.get("/get_all",
                 response_model=List[MLModel],
                 status_code=status.HTTP_200_OK,
@@ -46,31 +79,3 @@ async def get_all(session=Depends(get_session)) -> List[MLModel]:
     except Exception as e:
         logger.error(f"Error getting all ML models: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get all ML models")
-
-class MLTaskRequest(BaseModel):
-    user_id: int = Field(..., description="User id"),
-    request: str = Field(..., description="Запрос к ML Модели")
-
-@model_route.post("/{model_id}/task",
-                  response_model=MLTask,
-                  status_code=status.HTTP_201_CREATED,
-                  summary="New ML task",
-                  description="Create new ML task")
-async def create_mal_task(model_id: int = Path(..., description="user id"),
-                  request: MLTaskRequest = Body(...),
-                  session=Depends(get_session)) -> MLTask:
-    try:
-        user = services.user.get_user_by_id(request.user_id, session)
-        ml_model = services.ml_model.get_ml_model_by_id(model_id, session)
-
-        balance = user.balance if user.balance else 0
-        prediction_cost = ml_model.prediction_cost if ml_model.prediction_cost else 0
-        if balance <= prediction_cost:
-            logger.warning(f"Insufficient funds")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient funds")
-
-        ml_task = services.ml_task.create_ml_task(MLTask(user=user, model=ml_model, request=request.request), session)
-        return ml_task
-    except Exception as e:
-        logger.error(f"Error creating ML model: '{str(e)}'")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create ML model")

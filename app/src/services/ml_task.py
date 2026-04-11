@@ -9,7 +9,7 @@ def get_ml_task_by_id(ml_task_id: int, session: Session) -> MLTask:
         stmt = select(MLTask).where(MLTask.id == ml_task_id)
         ml_task = session.exec(stmt).first()
         if not ml_task or not isinstance(ml_task, MLTask):
-            raise ValueError(f"Invalid ML task by id={ml_task}")
+            raise ValueError(f"Invalid ML task by id={ml_task_id}")
         return ml_task
     except Exception:
         raise

@@ -1,6 +1,7 @@
 import logging
 import services.user
 import services.transaction
+import services.ml_model
 import services.ml_task
 import services.prediction
 from decimal import Decimal
@@ -197,7 +198,7 @@ async def get_all_users(session=Depends(get_session)) -> List[User]:
                 status_code=status.HTTP_200_OK,
                 summary="User ML tasks",
                 description="List of user ML tasks")
-async def get_users_ml_tasks(user_id: int = Path(..., description="user id"),
+async def get_user_ml_tasks(user_id: int = Path(..., description="user id"),
                              session=Depends(get_session)) -> List[MLTask]:
     try:
         user = services.user.get_user_by_id(user_id, session)
@@ -206,6 +207,41 @@ async def get_users_ml_tasks(user_id: int = Path(..., description="user id"),
     except Exception as e:
         logger.error(f"Error getting user ML tasks: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user ML tasks")
+
+
+class CreateMLTaskRequest(BaseModel):
+    model: str = Field(..., min_length=1, max_length=50, description="ML model external reference")
+    request: str = Field(..., description="request content")
+
+@user_route.post("/{user_id}/ml_task",
+                  response_model=MLTask,
+                  status_code=status.HTTP_201_CREATED,
+                  summary="New ML task",
+                  description="Create new ML task")
+async def create_ml_task(user_id: int = Path(..., description="user id"),
+                         request: CreateMLTaskRequest = Body(...),
+                         session=Depends(get_session)) -> MLTask:
+    try:
+        user = services.user.get_user_by_id(user_id, session)
+        ml_model = services.ml_model.get_ml_model_by_reference(request.model, session)
+
+        if not ml_model:
+            logger.warning(f"ML Model external reference '{request.model}' not found")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Wrong ML Model external reference: '{request.model}'")
+
+        balance = user.balance if user.balance else 0
+        prediction_cost = ml_model.prediction_cost if ml_model.prediction_cost else Decimal(0.0)
+
+        if balance <= prediction_cost:
+            logger.warning(f"Insufficient funds")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient funds")
+
+        ml_task = services.ml_task.create_ml_task(MLTask(user=user, model=ml_model, request=request.request), session)
+
+        return ml_task
+    except Exception as e:
+        logger.error(f"Error creating ML task: '{str(e)}'")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create ML task")
 
 @user_route.get("/{user_id}/predictions",
                 response_model=List[Prediction],
