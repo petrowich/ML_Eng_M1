@@ -2,3 +2,5 @@ SQLAlchemy
 sqlmodel
 pydantic-settings
 psycopg[binary,pool]
+fastapi
+uvicorn

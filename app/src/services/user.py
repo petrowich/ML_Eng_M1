@@ -7,7 +7,7 @@ def get_user_by_id(user_id: int, session: Session) -> User:
     try:
         stmt = select(User).where(User.id == user_id)
         user = session.exec(stmt).first()
-        if not user and not isinstance(user, User):
+        if not user or not isinstance(user, User):
             raise ValueError(f"Invalid user by id={user_id}")
         return user
     except Exception:

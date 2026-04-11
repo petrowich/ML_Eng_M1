@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: Optional[str] = None
+    APP_DESCRIPTION: Optional[str] = None
     APP_PORT: Optional[int] = None
     DEBUG: Optional[bool] = None
 

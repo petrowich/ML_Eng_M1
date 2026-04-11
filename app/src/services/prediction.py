@@ -9,7 +9,7 @@ def get_prediction_by_id(prediction_id: int, session: Session) -> Prediction:
     try:
         stmt = select(Prediction).where(Prediction.id == prediction_id)
         prediction = session.exec(stmt).first()
-        if not prediction and not isinstance(prediction, Prediction):
+        if not prediction or not isinstance(prediction, Prediction):
             raise ValueError(f"Invalid prediction by id={prediction_id}")
         return prediction
     except Exception:

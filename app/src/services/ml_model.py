@@ -7,7 +7,7 @@ def get_ml_model_by_id(ml_model_id: int, session: Session) -> MLModel:
     try:
         stmt = select(MLModel).where(MLModel.id == ml_model_id)
         ml_model = session.exec(stmt).first()
-        if not ml_model and not isinstance(ml_model, MLModel):
+        if not ml_model or not isinstance(ml_model, MLModel):
             raise ValueError(f"Invalid ML model by id={ml_model}")
         return ml_model
     except Exception:

@@ -13,7 +13,7 @@ def get_transaction_by_id(transaction_id: UUID, session: Session) -> Transaction
     try:
         stmt = select(Transaction).where(Transaction.id == transaction_id)
         transaction = session.exec(stmt).first()
-        if not transaction and not isinstance(transaction, Transaction):
+        if not transaction or not isinstance(transaction, Transaction):
             raise ValueError(f"Invalid transaction id:{transaction_id}")
         return transaction
     except Exception:
@@ -111,6 +111,16 @@ def refund_transaction(transaction: Transaction, session: Session) -> Transactio
         session.rollback()
         raise
 
+def create_transaction(transaction: Transaction, session: Session) -> Transaction:
+    try:
+        transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)
+        session.add(transaction)
+        session.commit()
+        return transaction
+    except Exception:
+        session.rollback()
+        raise
+
 def update_transaction(transaction: Transaction, session: Session):
     try:
         session.add(transaction)
@@ -121,6 +131,8 @@ def update_transaction(transaction: Transaction, session: Session):
 
 def create_transactions(transactions: Iterable[Transaction], session: Session) -> Iterable[Transaction]:
     try:
+        for transaction in transactions:
+            transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)
         session.add_all([transaction for transaction in transactions])
         session.commit()
         for transaction in transactions:
@@ -156,7 +168,7 @@ def get_all_transactions(session: Session) -> Sequence[Transaction]:
 
 def get_transactions_by_user(user: User, session: Session) -> Sequence[Transaction]:
     try:
-        stmt = select(Transaction).where(User.id == user.id)
+        stmt = select(Transaction).join(User).where(User.id == user.id)
         return session.exec(stmt).all()
     except Exception:
         raise

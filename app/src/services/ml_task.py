@@ -1,13 +1,14 @@
 from typing import Iterable, Sequence
 from sqlmodel import Session, select
 from models.ml_task import MLTask
+from models.user import User
 
 
 def get_ml_task_by_id(ml_task_id: int, session: Session) -> MLTask:
     try:
         stmt = select(MLTask).where(MLTask.id == ml_task_id)
         ml_task = session.exec(stmt).first()
-        if not ml_task and not isinstance(ml_task, MLTask):
+        if not ml_task or not isinstance(ml_task, MLTask):
             raise ValueError(f"Invalid ML task by id={ml_task}")
         return ml_task
     except Exception:
@@ -70,6 +71,13 @@ def delete_ml_tasks(ml_tasks: Iterable[MLTask], session: Session):
 def get_all_ml_tasks(session: Session) -> Sequence[MLTask]:
     try:
         stmt = select(MLTask)
+        return session.exec(stmt).all()
+    except Exception:
+        raise
+
+def get_ml_tasks_by_user(user: User, session: Session) -> Sequence[MLTask]:
+    try:
+        stmt = select(MLTask).join(User).where(User.id == user.id)
         return session.exec(stmt).all()
     except Exception:
         raise
