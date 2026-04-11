@@ -7,11 +7,11 @@ from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType, TransactionStatus
 from models.user import User, UserRole, UserAuth
-from services.ml_model import create_ml_models
-from services.ml_task import create_ml_tasks
-from services.prediction import create_predictions
-from services.transaction import create_transactions
-from services.user import create_user, create_users, get_all_users
+from services.ml_model import add_ml_models
+from services.ml_task import add_ml_tasks
+from services.prediction import add_predictions
+from services.transaction import add_transactions
+from services.user import add_user, add_users, get_all_users
 
 
 logger = logging.getLogger(__name__)
@@ -64,12 +64,12 @@ def populate_db(engine):
         ml_model_3 = MLModel(name='ML Model', reference='MODEL_25', description='Yet Another ML Model', prediction_cost=0.50)
         ml_models = [ml_model_1, ml_model_2, ml_model_3]
         with Session(engine) as session:
-            create_ml_models(ml_models, session)
+            add_ml_models(ml_models, session)
 
         # пользователь с ролю админа
         admin = User(name='Admin', email='admin@admins.ml', role=UserRole.ADMIN, auth=UserAuth(login='admin', pwd_hash='admin'))
         with Session(engine) as session:
-            create_user(admin, session)
+            add_user(admin, session)
 
         # пользователи
         first_user = User(name='First User', email='first@users.ml', role=UserRole.USER, auth=UserAuth(login='first', pwd_hash='qwerty'), balance=150)
@@ -77,7 +77,7 @@ def populate_db(engine):
         third_user = User(name='Third User', email='third@users.ml', role=UserRole.USER, auth=UserAuth(login='third', pwd_hash='password'), balance=195.05)
         ml_users = [first_user, second_user, third_user]
         with Session(engine) as session:
-            create_users(ml_users, session)
+            add_users(ml_users, session)
 
         # предсказания
         prediction_01 = Prediction(result='prediction 01', cost=1.05)
@@ -86,7 +86,7 @@ def populate_db(engine):
 
         predictions = [prediction_01, prediction_02, prediction_03]
         with Session(engine) as session:
-            create_predictions(predictions, session)
+            add_predictions(predictions, session)
 
         # транзакции
         deposit_01 = Transaction(user=first_user, type=TransactionType.DEPOSIT, status=TransactionStatus.COMPLETED, amount=100, balance=150)
@@ -104,7 +104,7 @@ def populate_db(engine):
         transactions = [deposit_01, deposit_02, deposit_03,
                         withdraw_01, withdraw_02, withdraw_03, withdraw_04, withdraw_05, withdraw_06, withdraw_07]
         with Session(engine) as session:
-            create_transactions(transactions, session)
+            add_transactions(transactions, session)
 
         # задачи для МЛ Модели
         task_01 = MLTask(user=first_user, model=ml_model_1, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
@@ -117,10 +117,10 @@ def populate_db(engine):
 
         ml_tasks = [task_01, task_02, task_03, task_04, task_05, task_06, task_07]
         with Session(engine) as session:
-            create_ml_tasks(ml_tasks, session)
+            add_ml_tasks(ml_tasks, session)
 
         with Session(engine) as session:
-            create_ml_tasks(ml_tasks, session)
+            add_ml_tasks(ml_tasks, session)
             users = get_all_users(session)
             logging.info(f"number of users: {len(users)}")
 

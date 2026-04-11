@@ -14,7 +14,7 @@ def get_ml_task_by_id(ml_task_id: int, session: Session) -> MLTask:
     except Exception:
         raise
 
-def create_ml_task(ml_task: MLTask, session: Session) -> MLTask:
+def add_ml_task(ml_task: MLTask, session: Session) -> MLTask:
     try:
         session.add(ml_task)
         session.commit()
@@ -24,7 +24,7 @@ def create_ml_task(ml_task: MLTask, session: Session) -> MLTask:
         session.rollback()
         raise
 
-def create_ml_tasks(ml_tasks: Iterable[MLTask], session: Session) -> Iterable[MLTask]:
+def add_ml_tasks(ml_tasks: Iterable[MLTask], session: Session) -> Iterable[MLTask]:
     try:
         session.add_all([ml_task for ml_task in ml_tasks])
         session.commit()
@@ -33,23 +33,7 @@ def create_ml_tasks(ml_tasks: Iterable[MLTask], session: Session) -> Iterable[ML
         return ml_tasks
     except Exception:
         session.rollback()
-        raise
-        
-def update_ml_task(ml_task: MLTask, session: Session):
-    try:
-        session.add(ml_task)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
-    
-def update_ml_tasks(ml_tasks: Iterable[MLTask], session: Session):
-    try:
-        session.add_all([ml_task for ml_task in ml_tasks])
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
+        raise        
 
 def delete_ml_task(ml_task: MLTask, session: Session):
     try:

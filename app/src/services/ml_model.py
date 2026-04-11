@@ -1,4 +1,3 @@
-from optparse import Option
 from typing import Iterable, Sequence, Optional
 from sqlmodel import Session, select
 from models.ml_model import MLModel
@@ -14,7 +13,7 @@ def get_ml_model_by_id(ml_model_id: int, session: Session) -> MLModel:
     except Exception:
         raise
 
-def create_ml_model(ml_model: MLModel, session: Session) -> MLModel:
+def add_ml_model(ml_model: MLModel, session: Session) -> MLModel:
     try:
         session.add(ml_model)
         session.commit()
@@ -24,7 +23,7 @@ def create_ml_model(ml_model: MLModel, session: Session) -> MLModel:
         session.rollback()
         raise
 
-def create_ml_models(ml_models: Iterable[MLModel], session: Session) -> Iterable[MLModel]:
+def add_ml_models(ml_models: Iterable[MLModel], session: Session) -> Iterable[MLModel]:
     try:
         session.add_all([ml_model for ml_model in ml_models])
         session.commit()
@@ -34,22 +33,6 @@ def create_ml_models(ml_models: Iterable[MLModel], session: Session) -> Iterable
     except Exception:
         session.rollback()
         raise
-        
-def update_ml_model(ml_model: MLModel, session: Session):
-    try:
-        session.add(ml_model)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
-    
-def update_ml_models(ml_models: Iterable[MLModel], session: Session):
-    try:
-        session.add_all([ml_model for ml_model in ml_models])
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
 
 def delete_ml_model(ml_model: MLModel, session: Session):
     try:

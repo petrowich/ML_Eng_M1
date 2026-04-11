@@ -49,7 +49,7 @@ async def signup(request: UserAuthRequest = Body(...),
 
         auth = UserAuth(login=request.login, pwd_hash=request.pwd_hash)
         user = User(auth=auth, email=request.email)
-        services.user.create_user(user, session)
+        services.user.add_user(user, session)
 
         logger.info(f"New user with login '{request.login}' created")
 
@@ -123,7 +123,7 @@ async def update(user_id: int = Path(..., description="user id"),
         user.name = request.name
         user.email = request.email
         user.role = request.role
-        user = services.user.update_user(user, session)
+        user = services.user.add_user(user, session)
 
         return user
     except Exception as e:
@@ -170,7 +170,7 @@ async def deposit(user_id: int = Path(..., description="user id"),
     try:
         user = services.user.get_user_by_id(user_id, session)
         transaction = Transaction(user=user, type=TransactionType.DEPOSIT, amount=request.amount)
-        services.transaction.create_transaction(transaction, session)
+        services.transaction.add_transaction(transaction, session)
         services.transaction.apply_transaction(transaction, session)
         user = services.user.get_user_by_id(user_id, session)
         balance = user.balance if user.balance else Decimal(0.0)
@@ -236,7 +236,7 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
             logger.warning(f"Insufficient funds")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient funds")
 
-        ml_task = services.ml_task.create_ml_task(MLTask(user=user, model=ml_model, request=request.request), session)
+        ml_task = services.ml_task.add_ml_task(MLTask(user=user, model=ml_model, request=request.request), session)
 
         return ml_task
     except Exception as e:

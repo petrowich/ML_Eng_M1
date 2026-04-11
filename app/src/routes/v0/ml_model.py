@@ -55,12 +55,9 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
 
         ml_model.name = request.name
         ml_model.description = request.description
-        ml_model.prediction_cost = Decimal(request.prediction_cost)
+        ml_model.prediction_cost = request.prediction_cost
 
-        if ml_model.id:
-            ml_model = services.ml_model.update_ml_model(ml_model, session)
-        else:
-            ml_model = services.ml_model.create_ml_model(ml_model, session)
+        ml_model = services.ml_model.add_ml_model(ml_model, session)
 
         return ml_model
     except Exception as e:

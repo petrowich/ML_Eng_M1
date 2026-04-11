@@ -111,7 +111,7 @@ def refund_transaction(transaction: Transaction, session: Session) -> Transactio
         session.rollback()
         raise
 
-def create_transaction(transaction: Transaction, session: Session) -> Transaction:
+def add_transaction(transaction: Transaction, session: Session) -> Transaction:
     try:
         transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)
         session.add(transaction)
@@ -121,15 +121,7 @@ def create_transaction(transaction: Transaction, session: Session) -> Transactio
         session.rollback()
         raise
 
-def update_transaction(transaction: Transaction, session: Session):
-    try:
-        session.add(transaction)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-
-def create_transactions(transactions: Iterable[Transaction], session: Session) -> Iterable[Transaction]:
+def add_transactions(transactions: Iterable[Transaction], session: Session) -> Iterable[Transaction]:
     try:
         for transaction in transactions:
             transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)

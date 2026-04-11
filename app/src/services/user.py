@@ -13,7 +13,7 @@ def get_user_by_id(user_id: int, session: Session) -> User:
     except Exception:
         raise
 
-def create_user(user: User, session: Session) -> User:
+def add_user(user: User, session: Session) -> User:
     try:
         session.add(user)
         session.commit()
@@ -23,29 +23,13 @@ def create_user(user: User, session: Session) -> User:
         session.rollback()
         raise
 
-def create_users(users: Iterable[User], session: Session) -> Iterable[User]:
+def add_users(users: Iterable[User], session: Session) -> Iterable[User]:
     try:
         session.add_all([user for user in users])
         session.commit()
         for user in users:
             session.refresh(user)
         return users
-    except Exception:
-        session.rollback()
-        raise
-
-def update_user(user: User, session: Session):
-    try:
-        session.add(user)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-
-def update_users(users: Iterable[User], session: Session):
-    try:
-        session.add_all([user for user in users])
-        session.commit()
     except Exception:
         session.rollback()
         raise
