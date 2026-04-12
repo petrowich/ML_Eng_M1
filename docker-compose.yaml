@@ -6,13 +6,20 @@ services:
       dockerfile: Dockerfile
     env_file:
       - app/src/.env
-#    volumes:
-#      - app-code:/app
+    volumes:
+      - ./app/src/:/app
     depends_on:
       - database
       - rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     networks:
       - internal
+    restart: always
 
   web-proxy:
     container_name: ml-service-web-proxy
@@ -27,9 +34,10 @@ services:
     volumes:
 #      - ./web-proxy/conf.d:/etc/nginx/conf.d:ro
 #      - ./web-proxy/certs:/etc/nginx/certs:ro
-      - nginx_log:/var/log/nginx
+      - ./web-proxy/nginx.conf:/etc/nginx/nginx.conf
     networks:
       - internal
+    restart: always
 
   rabbitmq:
     container_name: ml-service-rabbitmq
@@ -71,10 +79,8 @@ services:
     restart: always
 
 volumes:
-#  app-code:
   rabbitmq-data:
   postgres-data:
-  nginx_log:
 
 networks:
   internal:

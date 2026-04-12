@@ -15,6 +15,7 @@ class MLModel(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     name: Optional[str] = Field(max_length=255)
+    reference: Optional[str] = Field(min_length=1, max_length=50, nullable=False, unique=True, index=True)
     description: Optional[str] = Field(sa_column=Column(String(2000), nullable=False))
     prediction_cost: Decimal = Field(default=Decimal("0.0"), max_digits=12, decimal_places=4)
 

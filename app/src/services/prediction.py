@@ -9,13 +9,13 @@ def get_prediction_by_id(prediction_id: int, session: Session) -> Prediction:
     try:
         stmt = select(Prediction).where(Prediction.id == prediction_id)
         prediction = session.exec(stmt).first()
-        if not prediction and not isinstance(prediction, Prediction):
+        if not prediction or not isinstance(prediction, Prediction):
             raise ValueError(f"Invalid prediction by id={prediction_id}")
         return prediction
     except Exception:
         raise
 
-def create_prediction(prediction: Prediction, session: Session) -> Prediction:
+def add_prediction(prediction: Prediction, session: Session) -> Prediction:
     try:
         session.add(prediction)
         session.commit()
@@ -25,7 +25,7 @@ def create_prediction(prediction: Prediction, session: Session) -> Prediction:
         session.rollback()
         raise
 
-def create_predictions(predictions: Iterable[Prediction], session: Session) -> Iterable[Prediction]:
+def add_predictions(predictions: Iterable[Prediction], session: Session) -> Iterable[Prediction]:
     try:
         session.add_all([prediction for prediction in predictions])
         session.commit()
@@ -35,22 +35,6 @@ def create_predictions(predictions: Iterable[Prediction], session: Session) -> I
     except Exception:
         session.rollback()
         raise
-        
-def update_prediction(prediction: Prediction, session: Session):
-    try:
-        session.add(prediction)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
-    
-def update_predictions(predictions: Iterable[Prediction], session: Session):
-    try:
-        session.add_all([prediction for prediction in predictions])
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise    
 
 def delete_prediction(prediction: Prediction, session: Session):
     try:
