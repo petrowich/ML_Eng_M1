@@ -1,12 +1,12 @@
 import logging
-import services.user
-import services.ml_task
-import services.transaction
-import services.ml_task
+import services
+import services.repository.ml_task
+import services.repository.transaction
+import services.repository.ml_task
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends
 from starlette import status
-from database.database import get_session
+from datasource.database import get_session
 from models.ml_task import MLTask
 
 
@@ -24,7 +24,7 @@ task_route = APIRouter()
 async def get_ml_task(task_id: int = Path(..., description="task id"),
                       session=Depends(get_session)) -> MLTask:
     try:
-        ml_task = services.ml_task.get_ml_task_by_id(task_id, session)
+        ml_task = services.repository.ml_task.get_ml_task_by_id(task_id, session)
         return ml_task
     except Exception as e:
         logger.error(f"Error getting ML task: '{str(e)}'")

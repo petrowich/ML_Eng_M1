@@ -3,15 +3,15 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from database.config import get_settings
-from database.database import init_db
+from datasource.config import get_settings
+from datasource.database import init_db
+from datasource.rabbitmq import declare_queue, get_queue_ml_tasks
 from routes.home import home_route
 from routes.v0.ml_task import task_route
 from routes.v0.ml_model import model_route
 from routes.v0.prediction import prediction_route
 from routes.v0.user import user_route
 from routes.v0.transaction import transaction_route
-
 
 settings = get_settings()
 
@@ -20,15 +20,19 @@ APP_DESCRIPTION = settings.APP_DESCRIPTION or ""
 APP_PORT = settings.APP_PORT or 8080
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=settings.log_level)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         app.state.cache = {}
         logger.info("initializing db")
-        init_db(drop_all=False)
+        init_db(drop_all=True)
         logger.info("db has been initialized")
+        logger.info("creating ML tasks queue")
+        declare_queue(get_queue_ml_tasks())
+        logger.info("ML tasks queue have been created")
     except Exception as e:
         logger.error(f"start up failed: {e}")
 

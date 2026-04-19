@@ -8,15 +8,16 @@ from sqlalchemy.orm import declared_attr
 
 class Prediction(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
+    def __tablename__(self) -> str:
         return "predictions"
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
     result: Optional[str] = Field(sa_column=Column(Text, nullable=True))
-    cost: Decimal = Field(default=Decimal("0.0"))
+    cost: Decimal = Field(default=Decimal("0.0"), max_digits=8, decimal_places=4)
 
-    task: Optional["MLTask"] = Relationship(back_populates="prediction", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    ml_task_id: int = Field(foreign_key="ml_tasks.id", nullable=False, index=True)
+    ml_task: Optional["MLTask"] = Relationship(back_populates="prediction", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
     created: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
 

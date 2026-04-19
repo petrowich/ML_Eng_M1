@@ -1,34 +1,37 @@
 import logging
-from sqlalchemy import inspect
+from sqlalchemy import inspect, Engine
 from sqlmodel import SQLModel, Session, create_engine
-from database.config import get_settings
+from datasource.config import get_settings
 from models.ml_model import MLModel
 from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType, TransactionStatus
 from models.user import User, UserRole, UserAuth
-from services.ml_model import add_ml_models
-from services.ml_task import add_ml_tasks
-from services.prediction import add_predictions
-from services.transaction import add_transactions
-from services.user import add_user, add_users, get_all_users
+from services.repository.ml_model import add_ml_models
+from services.repository.ml_task import add_ml_tasks
+from services.repository.prediction import add_predictions
+from services.repository.transaction import add_transactions
+from services.repository.user import add_user, add_users, get_all_users
 
-
+settings = get_settings()
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=settings.log_level)
 
-def get_engine():
-    settings = get_settings()
 
-    engine = create_engine(
-        url=settings.database_url_psycopg,
-        echo=settings.DEBUG,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,
-        pool_recycle=3600,
-    )
-    return engine
+_engine = None
+
+def get_engine() -> Engine:
+    global _engine
+
+    if _engine is None:
+        _engine = create_engine(
+            url=settings.database_url_psycopg,
+            echo=settings.ENGINE_ECHO_DEBUG,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600,)
+    return _engine
 
 def get_session():
     engine = get_engine()
@@ -47,14 +50,14 @@ def init_db(drop_all: bool = False):
     except Exception:
         raise
 
-def is_new_db(engine) -> bool:
+def is_new_db(engine: Engine) -> bool:
     inspector = inspect(engine)
     for table_name, table in SQLModel.metadata.tables.items():
         if not inspector.has_table(table_name):
             return True
     return False
 
-def populate_db(engine):
+def populate_db(engine: Engine):
     try:
         logging.info(f"populating db")
 
@@ -79,15 +82,6 @@ def populate_db(engine):
         with Session(engine) as session:
             add_users(ml_users, session)
 
-        # предсказания
-        prediction_01 = Prediction(result='prediction 01', cost=1.05)
-        prediction_02 = Prediction(result='prediction 02', cost=1.05)
-        prediction_03 = Prediction(result='prediction 03', cost=1.05)
-
-        predictions = [prediction_01, prediction_02, prediction_03]
-        with Session(engine) as session:
-            add_predictions(predictions, session)
-
         # транзакции
         deposit_01 = Transaction(user=first_user, type=TransactionType.DEPOSIT, status=TransactionStatus.COMPLETED, amount=100, balance=150)
         deposit_02 = Transaction(user=second_user, type=TransactionType.DEPOSIT, status=TransactionStatus.COMPLETED, amount=50, balance=185.40)
@@ -107,17 +101,26 @@ def populate_db(engine):
             add_transactions(transactions, session)
 
         # задачи для МЛ Модели
-        task_01 = MLTask(user=first_user, model=ml_model_1, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
-        task_02 = MLTask(user=second_user, model=ml_model_2, request="first request of second user", transaction=withdraw_02, status=MLTaskStatus.COMPLETED, prediction=prediction_01)
-        task_03 = MLTask(user=second_user, model=ml_model_3, request="second request of second user", transaction=withdraw_03, status=MLTaskStatus.RUNNING)
-        task_04 = MLTask(user=third_user, model=ml_model_1, request="first request of third user", transaction=withdraw_04, status=MLTaskStatus.STOPPED)
-        task_05 = MLTask(user=third_user, model=ml_model_2, request="second request of third user", transaction=withdraw_05, status=MLTaskStatus.COMPLETED, prediction=prediction_02)
-        task_06 = MLTask(user=third_user, model=ml_model_3, request="third request of third user", transaction=withdraw_06, status=MLTaskStatus.COMPLETED, prediction=prediction_03)
-        task_07 = MLTask(user=third_user, model=ml_model_1, request="fourth request of third user", transaction=withdraw_07, status=MLTaskStatus.RUNNING)
+        task_01 = MLTask(user=first_user, ml_model=ml_model_1, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
+        task_02 = MLTask(user=second_user, ml_model=ml_model_2, request="first request of second user", transaction=withdraw_02, status=MLTaskStatus.COMPLETED)
+        task_03 = MLTask(user=second_user, ml_model=ml_model_3, request="second request of second user", transaction=withdraw_03, status=MLTaskStatus.RUNNING)
+        task_04 = MLTask(user=third_user, ml_model=ml_model_1, request="first request of third user", transaction=withdraw_04, status=MLTaskStatus.STOPPED)
+        task_05 = MLTask(user=third_user, ml_model=ml_model_2, request="second request of third user", transaction=withdraw_05, status=MLTaskStatus.COMPLETED)
+        task_06 = MLTask(user=third_user, ml_model=ml_model_3, request="third request of third user", transaction=withdraw_06, status=MLTaskStatus.COMPLETED)
+        task_07 = MLTask(user=third_user, ml_model=ml_model_1, request="fourth request of third user", transaction=withdraw_07, status=MLTaskStatus.RUNNING)
 
         ml_tasks = [task_01, task_02, task_03, task_04, task_05, task_06, task_07]
         with Session(engine) as session:
             add_ml_tasks(ml_tasks, session)
+
+        # предсказания
+        prediction_01 = Prediction(result='prediction 01', ml_task=task_02, cost=1.75)
+        prediction_02 = Prediction(result='prediction 02', ml_task=task_05, cost=1.75)
+        prediction_03 = Prediction(result='prediction 03', ml_task=task_06, cost=0.50)
+
+        predictions = [prediction_01, prediction_02, prediction_03]
+        with Session(engine) as session:
+            add_predictions(predictions, session)
 
         with Session(engine) as session:
             add_ml_tasks(ml_tasks, session)

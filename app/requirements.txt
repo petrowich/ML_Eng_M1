@@ -4,3 +4,4 @@ pydantic-settings
 psycopg[binary,pool]
 fastapi
 uvicorn
+pika

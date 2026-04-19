@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlmodel import Session, select
 from models.transaction import Transaction, TransactionType, TransactionStatus
 from models.user import User
-from services.user import get_user_by_id
+from services.repository.user import get_user_by_id
 
 
 def get_transaction_by_id(transaction_id: UUID, session: Session) -> Transaction:

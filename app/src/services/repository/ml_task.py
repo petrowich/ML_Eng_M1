@@ -1,8 +1,17 @@
+import json
+import logging
+import uuid
 from typing import Iterable, Sequence
 from sqlmodel import Session, select
 from models.ml_task import MLTask
 from models.user import User
+from pika import BasicProperties
+from pika.exceptions import AMQPConnectionError, AMQPChannelError
+from pika.adapters.blocking_connection import BlockingChannel
 
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 def get_ml_task_by_id(ml_task_id: int, session: Session) -> MLTask:
     try:

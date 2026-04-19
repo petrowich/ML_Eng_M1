@@ -1,9 +1,8 @@
-from typing import Dict
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from starlette import status
 
-from database.config import get_settings
+from datasource.config import get_settings
 
 home_route = APIRouter()
 

@@ -1,10 +1,10 @@
 import logging
-import services.user
-import services.prediction
+import services
+import services.repository.prediction
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends
 from starlette import status
-from database.database import get_session
+from datasource.database import get_session
 from models.prediction import Prediction
 
 
@@ -22,7 +22,7 @@ prediction_route = APIRouter()
 async def get_prediction(prediction_id: int = Path(..., description="prediction id"),
                          session=Depends(get_session)) -> Prediction:
     try:
-        prediction = services.prediction.get_prediction_by_id(prediction_id, session)
+        prediction = services.repository.prediction.get_prediction_by_id(prediction_id, session)
         return prediction
     except Exception as e:
         logger.error(f"Error getting prediction: '{str(e)}'")

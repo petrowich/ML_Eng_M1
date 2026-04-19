@@ -1,11 +1,11 @@
 import logging
 import uuid
-import services.user
-import services.transaction
+import services
+import services.repository.transaction
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends
 from starlette import status
-from database.database import get_session
+from datasource.database import get_session
 from models.transaction import Transaction
 
 
@@ -23,7 +23,7 @@ async def get_transaction(transaction_id: str = Path(..., description="transacti
                       session=Depends(get_session)) -> Transaction:
     try:
         transaction_uuid = uuid.UUID(transaction_id)
-        transaction = services.transaction.get_transaction_by_id(transaction_uuid, session)
+        transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         return transaction
     except Exception as e:
         logger.error(f"Error getting transaction: '{str(e)}'")
@@ -38,8 +38,8 @@ async def apply_transaction(transaction_id: str = Path(..., description="transac
                       session=Depends(get_session)) -> Transaction:
     try:
         transaction_uuid = uuid.UUID(transaction_id)
-        transaction = services.transaction.get_transaction_by_id(transaction_uuid, session)
-        transaction = services.transaction.apply_transaction(transaction, session)
+        transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
+        transaction = services.repository.transaction.apply_transaction(transaction, session)
         return transaction
     except Exception as e:
         logger.error(f"Error applying transaction: '{str(e)}'")
@@ -54,8 +54,8 @@ async def cancel_transaction(transaction_id: str = Path(..., description="transa
                       session=Depends(get_session)) -> Transaction:
     try:
         transaction_uuid = uuid.UUID(transaction_id)
-        transaction = services.transaction.get_transaction_by_id(transaction_uuid, session)
-        transaction = services.transaction.cancel_transaction(transaction, session)
+        transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
+        transaction = services.repository.transaction.cancel_transaction(transaction, session)
         return transaction
     except Exception as e:
         logger.error(f"Error cancelling transaction: '{str(e)}'")
@@ -70,8 +70,8 @@ async def refund_transaction(transaction_id: str = Path(..., description="transa
                       session=Depends(get_session)) -> Transaction:
     try:
         transaction_uuid = uuid.UUID(transaction_id)
-        transaction = services.transaction.get_transaction_by_id(transaction_uuid, session)
-        transaction = services.transaction.refund_transaction(transaction, session)
+        transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
+        transaction = services.repository.transaction.refund_transaction(transaction, session)
         return transaction
     except Exception as e:
         logger.error(f"Error refunding transaction: '{str(e)}'")

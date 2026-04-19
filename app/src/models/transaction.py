@@ -29,7 +29,7 @@ class TransactionStatus(str, Enum):
 
 class Transaction(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
+    def __tablename__(self) -> str:
         return "transactions"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -39,10 +39,10 @@ class Transaction(SQLModel, table=True):
 
     type: TransactionType = Field(default=TransactionType.DEPOSIT, sa_column=Column(SQLEnum(TransactionType), nullable=False))
     status: TransactionStatus = Field(default=TransactionStatus.PENDING, sa_column=Column(SQLEnum(TransactionStatus), nullable=False))
-    amount: Decimal
-    balance: Decimal
+    amount: Decimal = Field(max_digits=15, decimal_places=4, nullable=False)
+    balance: Decimal = Field(max_digits=15, decimal_places=4, nullable=False)
 
-    task: Optional["MLTask"] = Relationship(back_populates="transaction", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    ml_task: Optional["MLTask"] = Relationship(back_populates="transaction", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
