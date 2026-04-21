@@ -1,9 +1,9 @@
 import logging
-import services
 import services.repository.transaction
 import services.repository.ml_model
 import services.repository.ml_task
 import services.repository.prediction
+import services.repository.user
 import services.mq.ml_task
 from decimal import Decimal
 from typing import List
@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
 from starlette import status
 from datasource.database import get_session
-from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_rmq_connection
+from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_channel
 from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType
@@ -225,7 +225,7 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
                          session=Depends(get_session),
                          queue_ml_tasks=Depends(get_queue_ml_tasks),
                          queue_predictions=Depends(get_queue_predictions),
-                         rmq_connection=Depends(get_rmq_connection)) -> MLTask:
+                         channel=Depends(get_channel)) -> MLTask:
     try:
         user = services.repository.user.get_user_by_id(user_id, session)
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
@@ -243,16 +243,13 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
 
         ml_task = services.repository.ml_task.add_ml_task(MLTask(user=user, ml_model=ml_model, request=request.request), session)
 
-        ml_response = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, rmq_connection)
-        if ml_response:
-            try:
-                result = ml_response.get('prediction', None)
-                prediction = Prediction(result=result, ml_task=ml_task, cost=prediction_cost)
-                services.repository.prediction.add_prediction(prediction, session)
-                ml_task.status=MLTaskStatus.COMPLETED
-            except Exception as e:
-                logger.error(f"Error processing ML task: '{str(e)}'")
-                ml_task.status=MLTaskStatus.FAILED
+        try:
+            correlation_id = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, channel)
+            ml_task.status=MLTaskStatus.QUEUED
+        except Exception as e:
+            logger.error(f"Error processing ML task: '{str(e)}'")
+            ml_task.status=MLTaskStatus.FAILED
+            raise e
 
         ml_task = services.repository.ml_task.add_ml_task(ml_task, session)
 

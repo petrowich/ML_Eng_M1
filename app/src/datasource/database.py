@@ -62,9 +62,9 @@ def populate_db(engine: Engine):
         logging.info(f"populating db")
 
         # МЛ модель
-        ml_model_1 = MLModel(name='ML Model', reference='MODEL_05', description='The Greatest ML Model Ever', prediction_cost=1.05)
-        ml_model_2 = MLModel(name='ML Model', reference='MODEL_10', description='Retrained Greatest ML Model', prediction_cost=1.75)
-        ml_model_3 = MLModel(name='ML Model', reference='MODEL_25', description='Yet Another ML Model', prediction_cost=0.50)
+        ml_model_1 = MLModel(name='Logistic Regression', reference='LOGISTIC', description='Logistic Regression Model', prediction_cost=1.05)
+        ml_model_2 = MLModel(name='Decision Tree Classifier', reference='TREE', description='Decision Tree Classifier Model', prediction_cost=1.75)
+        ml_model_3 = MLModel(name='Linear Regression', reference='LINEAR', description='Linear Regression Model', prediction_cost=0.50)
         ml_models = [ml_model_1, ml_model_2, ml_model_3]
         with Session(engine) as session:
             add_ml_models(ml_models, session)

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 from pika import BlockingConnection
 from pika.adapters.blocking_connection import BlockingChannel
 from datasource.config import get_settings
@@ -13,7 +14,7 @@ logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
 
 _connection = None
 
-def get_rmq_connection() -> BlockingConnection:
+def get_connection() -> BlockingConnection:
     global _connection
 
     if _connection is None or _connection.is_closed:
@@ -21,8 +22,8 @@ def get_rmq_connection() -> BlockingConnection:
 
     return _connection
 
-def get_rmq_channel() -> BlockingChannel:
-    connection = get_rmq_connection()
+def get_channel() -> BlockingChannel:
+    connection = get_connection()
     return connection.channel()
 
 def get_queue_ml_tasks() -> str:
@@ -31,11 +32,12 @@ def get_queue_ml_tasks() -> str:
 def get_queue_predictions() -> str:
     return settings.QUEUE_PREDICTIONS or 'Predictions'
 
-def declare_queue(queue_name: str):
-    connection = get_rmq_connection()
+def declare_queue(queue_name: str) -> Any:
+    connection = get_connection()
     with connection.channel() as channel:
-        channel.queue_declare(
+        return channel.queue_declare(
             queue=queue_name,
             durable=True,
+            exclusive=False,
             arguments={'x-producers-type': 'classic'}
-        )
+        ).method.queue

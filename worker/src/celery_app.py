@@ -2,6 +2,7 @@ import json
 import logging
 from celery import Celery
 from datasource.config import get_settings
+from datasource.rabbitmq import get_amqp_url, get_queue_ml_tasks
 
 settings = get_settings()
 
@@ -10,10 +11,10 @@ logging.basicConfig(level=settings.log_level)
 
 app = Celery(
     settings.APP_NAME,
-    broker=settings.broker,
-    # backend='rpc://',
+    broker=get_amqp_url(),
+    backend='rpc://',
     include=['processing'],
-    task_default_queue=settings.input_queue,
+    task_default_queue=get_queue_ml_tasks(),
     accept_content=['application/json', 'text/plain'],
     task_serializer='json',
     result_serializer='json'

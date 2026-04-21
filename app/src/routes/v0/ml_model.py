@@ -1,16 +1,12 @@
 import logging
-import services
+from decimal import Decimal
 import services.repository.ml_model
-import services.repository.ml_model
-import services.repository.transaction
-import services.repository.ml_task
 from typing import List
 from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
 from starlette import status
 from datasource.database import get_session
 from models.ml_model import MLModel
-from models.ml_task import MLTask
 from pydantic import Field, BaseModel
 
 
@@ -46,7 +42,7 @@ class RegisterMLModelRequest(BaseModel):
                   status_code=status.HTTP_201_CREATED,
                   summary="Register ML Model",
                   description="Register new or update existent ML model")
-async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLTask:
+async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLModel:
     try:
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
@@ -55,7 +51,7 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
 
         ml_model.name = request.name
         ml_model.description = request.description
-        ml_model.prediction_cost = request.prediction_cost
+        ml_model.prediction_cost = Decimal(str(request.prediction_cost))
 
         ml_model = services.repository.ml_model.add_ml_model(ml_model, session)
 

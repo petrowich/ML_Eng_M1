@@ -1,6 +1,5 @@
 import logging
 import uuid
-import services
 import services.repository.transaction
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends
@@ -13,6 +12,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 transaction_route = APIRouter()
+
 
 @transaction_route.get("/{transaction_id}/",
                 response_model=Transaction,

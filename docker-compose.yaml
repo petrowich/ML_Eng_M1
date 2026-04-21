@@ -75,8 +75,6 @@ services:
 #      - "15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-#      test: ["CMD", "rabbitmq-diagnostics", "--quiet", "check_running", "&&", "rabbitmq-diagnostics", "--quiet", "check_local_alarms"]
-#      test: ["CMD", "rabbitmqctl", "status"]
       interval: 10s
       timeout: 10s
       retries: 5

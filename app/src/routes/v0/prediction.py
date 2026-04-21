@@ -1,5 +1,4 @@
 import logging
-import services
 import services.repository.prediction
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends

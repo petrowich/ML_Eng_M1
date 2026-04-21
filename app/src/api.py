@@ -12,6 +12,7 @@ from routes.v0.ml_model import model_route
 from routes.v0.prediction import prediction_route
 from routes.v0.user import user_route
 from routes.v0.transaction import transaction_route
+from consumers.prediction import prediction_consumer
 
 settings = get_settings()
 
@@ -33,10 +34,18 @@ async def lifespan(app: FastAPI):
         logger.info("creating ML tasks queue")
         declare_queue(get_queue_ml_tasks())
         logger.info("ML tasks queue have been created")
+        logger.info("starting prediction consumer")
+        prediction_consumer.start()
+        logger.info("prediction consumer has been created")
+
     except Exception as e:
         logger.error(f"start up failed: {e}")
 
     yield
+
+    logger.info("stopping prediction consumer")
+    prediction_consumer.stop()
+    logger.info("prediction consumer has been stopped")
 
     app.state.cache.clear()
     logger.info("shutting down")
