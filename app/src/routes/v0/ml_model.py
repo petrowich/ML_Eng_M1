@@ -1,16 +1,12 @@
 import logging
-import services.user
-import services.ml_model
-import services.ml_model
-import services.transaction
-import services.ml_task
+from decimal import Decimal
+import services.repository.ml_model
 from typing import List
 from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
 from starlette import status
-from database.database import get_session
+from datasource.database import get_session
 from models.ml_model import MLModel
-from models.ml_task import MLTask
 from pydantic import Field, BaseModel
 
 
@@ -28,7 +24,7 @@ model_route = APIRouter()
 async def get_ml_model(model_id: int = Path(..., description="model id"),
                       session=Depends(get_session)) -> MLModel:
     try:
-        ml_model = services.ml_model.get_ml_model_by_id(model_id, session)
+        ml_model = services.repository.ml_model.get_ml_model_by_id(model_id, session)
         return ml_model
     except Exception as e:
         logger.error(f"Error getting ML model: '{str(e)}'")
@@ -46,18 +42,18 @@ class RegisterMLModelRequest(BaseModel):
                   status_code=status.HTTP_201_CREATED,
                   summary="Register ML Model",
                   description="Register new or update existent ML model")
-async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLTask:
+async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLModel:
     try:
-        ml_model = services.ml_model.get_ml_model_by_reference(request.model, session)
+        ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
         if not ml_model:
             ml_model = MLModel(reference=request.model)
 
         ml_model.name = request.name
         ml_model.description = request.description
-        ml_model.prediction_cost = request.prediction_cost
+        ml_model.prediction_cost = Decimal(str(request.prediction_cost))
 
-        ml_model = services.ml_model.add_ml_model(ml_model, session)
+        ml_model = services.repository.ml_model.add_ml_model(ml_model, session)
 
         return ml_model
     except Exception as e:
@@ -71,7 +67,7 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
                 description="List of all ML models")
 async def get_all(session=Depends(get_session)) -> List[MLModel]:
     try:
-        ml_models = services.ml_model.get_all_ml_models(session)
+        ml_models = services.repository.ml_model.get_all_ml_models(session)
         return list(ml_models)
     except Exception as e:
         logger.error(f"Error getting all ML models: '{str(e)}'")

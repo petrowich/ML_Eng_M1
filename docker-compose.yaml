@@ -9,14 +9,34 @@ services:
     volumes:
       - ./app/src/:/app
     depends_on:
-      - database
-      - rabbitmq
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 5
       start_period: 10s
+    networks:
+      - internal
+    restart: always
+
+  worker:
+    deploy:
+      replicas: 3
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+#    container_name: ml-service-worker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - worker/src/.env
+    volumes:
+      - ./worker/src/:/app
     networks:
       - internal
     restart: always
@@ -30,23 +50,31 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     volumes:
 #      - ./web-proxy/conf.d:/etc/nginx/conf.d:ro
 #      - ./web-proxy/certs:/etc/nginx/certs:ro
       - ./web-proxy/nginx.conf:/etc/nginx/nginx.conf
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     restart: always
 
   rabbitmq:
     container_name: ml-service-rabbitmq
     image: rabbitmq:4-alpine
+#    image: rabbitmq:4-management
 #    ports:
 #      - "5672:5672"
 #      - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "--quiet", "check_running", "&&", "rabbitmq-diagnostics", "--quiet", "check_local_alarms"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -58,7 +86,7 @@ services:
     restart: always
 
   database:
-    container_name: ml-service-database
+    container_name: ml-service-datasource
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

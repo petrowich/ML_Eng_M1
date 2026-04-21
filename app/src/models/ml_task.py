@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 class MLTaskStatus(str, Enum):
     NEW = "NEW"
+    QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     STOPPED = "STOPPED"
     COMPLETED = "COMPLETED"
@@ -24,22 +25,21 @@ class MLTaskStatus(str, Enum):
 
 class MLTask(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
-        return "tasks"
+    def __tablename__(self) -> str:
+        return "ml_tasks"
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
     user_id: int = Field(foreign_key="users.id")
-    user: Optional["User"] = Relationship(back_populates="tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    user: Optional["User"] = Relationship(back_populates="ml_tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
-    model_id: int = Field(foreign_key="models.id")
-    model: Optional["MLModel"] = Relationship(back_populates="tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    ml_model_id: int = Field(foreign_key="ml_models.id")
+    ml_model: Optional["MLModel"] = Relationship(back_populates="ml_tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
-    prediction_id: int = Field(default=None, foreign_key="predictions.id", nullable=True, unique=True)
-    prediction: Optional["Prediction"] = Relationship(back_populates="task", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    prediction: Optional["Prediction"] = Relationship(back_populates="ml_task", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
     transaction_id: Optional[uuid.UUID] = Field(default=None, foreign_key="transactions.id", nullable=True, unique=True)
-    transaction: Optional["Transaction"] = Relationship(back_populates="task", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
+    transaction: Optional["Transaction"] = Relationship(back_populates="ml_task", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
     request: Optional[str] = Field(sa_column=Column(Text, nullable=True))
 

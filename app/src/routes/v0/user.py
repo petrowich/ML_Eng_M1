@@ -1,16 +1,18 @@
 import logging
-import services.user
-import services.transaction
-import services.ml_model
-import services.ml_task
-import services.prediction
+import services.repository.transaction
+import services.repository.ml_model
+import services.repository.ml_task
+import services.repository.prediction
+import services.repository.user
+import services.mq.ml_task
 from decimal import Decimal
 from typing import List
 from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
 from starlette import status
-from database.database import get_session
-from models.ml_task import MLTask
+from datasource.database import get_session
+from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_channel
+from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserAuth, UserRole
@@ -18,7 +20,7 @@ from pydantic import Field, BaseModel
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 user_route = APIRouter()
 
@@ -39,17 +41,17 @@ class UserAuthResponse(BaseModel):
 async def signup(request: UserAuthRequest = Body(...),
                  session=Depends(get_session)) -> UserAuthResponse:
     try:
-        if services.user.get_user_by_login(request.login, session):
+        if services.repository.user.get_user_by_login(request.login, session):
             logger.warning(f"User login '{request.login}' already exists")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Login '{request.login}' is already in use")
 
-        if services.user.get_user_by_email(request.email, session):
+        if services.repository.user.get_user_by_email(request.email, session):
             logger.warning(f"User email '{request.email}' is already registered")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email '{request.email}' is already registered")
 
         auth = UserAuth(login=request.login, pwd_hash=request.pwd_hash)
         user = User(auth=auth, email=request.email)
-        services.user.add_user(user, session)
+        services.repository.user.add_user(user, session)
 
         logger.info(f"New user with login '{request.login}' created")
 
@@ -66,10 +68,10 @@ async def signup(request: UserAuthRequest = Body(...),
 async def signin(request: UserAuthRequest = Body(...),
                  session=Depends(get_session)) -> UserAuthResponse:
     try:
-        user = services.user.get_user_by_login(request.login, session)
+        user = services.repository.user.get_user_by_login(request.login, session)
 
         if not user:
-            user = services.user.get_user_by_email(request.login, session)
+            user = services.repository.user.get_user_by_email(request.login, session)
 
         if not user:
             logger.warning(f"Trying to sign in with non-existent login name or email: '{request.login}'")
@@ -94,7 +96,7 @@ async def signin(request: UserAuthRequest = Body(...),
 async def get_user(user_id: int = Path(..., description="user id"),
                    session=Depends(get_session)) -> User:
     try:
-        user = services.user.get_user_by_id(user_id, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
         return user
     except Exception as e:
         logger.error(f"get user error: '{str(e)}'")
@@ -114,16 +116,16 @@ async def update(user_id: int = Path(..., description="user id"),
                  request: UserUpdateRequest = Body(...),
                  session=Depends(get_session)) -> User:
     try:
-        user = services.user.get_user_by_id(user_id, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
 
-        if user.email!=request.email and services.user.get_user_by_email(request.email, session):
+        if user.email!=request.email and services.repository.user.get_user_by_email(request.email, session):
             logger.warning(f"User email '{request.email}' is already registered")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Email '{request.email}' is already registered")
 
         user.name = request.name
         user.email = request.email
         user.role = request.role
-        user = services.user.add_user(user, session)
+        user = services.repository.user.add_user(user, session)
 
         return user
     except Exception as e:
@@ -142,7 +144,7 @@ class BalanceResponse(BaseModel):
 async def get_balance(user_id: int = Path(..., description="user id"),
                       session=Depends(get_session)) -> BalanceResponse:
     try:
-        user = services.user.get_user_by_id(user_id, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
         balance = user.balance if user.balance else Decimal(0.0)
         response = BalanceResponse(balance=float(balance))
         return response
@@ -168,11 +170,11 @@ async def deposit(user_id: int = Path(..., description="user id"),
                   request: DepositRequest = Body(...),
                   session=Depends(get_session)) -> DepositResponse:
     try:
-        user = services.user.get_user_by_id(user_id, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
         transaction = Transaction(user=user, type=TransactionType.DEPOSIT, amount=request.amount)
-        services.transaction.add_transaction(transaction, session)
-        services.transaction.apply_transaction(transaction, session)
-        user = services.user.get_user_by_id(user_id, session)
+        services.repository.transaction.add_transaction(transaction, session)
+        services.repository.transaction.apply_transaction(transaction, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
         balance = user.balance if user.balance else Decimal(0.0)
         response = DepositResponse(deposited=request.amount, balance=float(balance))
         return response
@@ -187,7 +189,7 @@ async def deposit(user_id: int = Path(..., description="user id"),
                 description="List of all users")
 async def get_all_users(session=Depends(get_session)) -> List[User]:
     try:
-        users = services.user.get_all_users(session)
+        users = services.repository.user.get_all_users(session)
         return list(users)
     except Exception as e:
         logger.error(f"Error getting all users: '{str(e)}'")
@@ -201,8 +203,8 @@ async def get_all_users(session=Depends(get_session)) -> List[User]:
 async def get_user_ml_tasks(user_id: int = Path(..., description="user id"),
                              session=Depends(get_session)) -> List[MLTask]:
     try:
-        user = services.user.get_user_by_id(user_id, session)
-        ml_task = services.ml_task.get_ml_tasks_by_user(user, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
+        ml_task = services.repository.ml_task.get_ml_tasks_by_user(user, session)
         return list(ml_task)
     except Exception as e:
         logger.error(f"Error getting user ML tasks: '{str(e)}'")
@@ -220,10 +222,13 @@ class CreateMLTaskRequest(BaseModel):
                   description="Create new ML task")
 async def create_ml_task(user_id: int = Path(..., description="user id"),
                          request: CreateMLTaskRequest = Body(...),
-                         session=Depends(get_session)) -> MLTask:
+                         session=Depends(get_session),
+                         queue_ml_tasks=Depends(get_queue_ml_tasks),
+                         queue_predictions=Depends(get_queue_predictions),
+                         channel=Depends(get_channel)) -> MLTask:
     try:
-        user = services.user.get_user_by_id(user_id, session)
-        ml_model = services.ml_model.get_ml_model_by_reference(request.model, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
+        ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
         if not ml_model:
             logger.warning(f"ML Model external reference '{request.model}' not found")
@@ -236,7 +241,17 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
             logger.warning(f"Insufficient funds")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient funds")
 
-        ml_task = services.ml_task.add_ml_task(MLTask(user=user, model=ml_model, request=request.request), session)
+        ml_task = services.repository.ml_task.add_ml_task(MLTask(user=user, ml_model=ml_model, request=request.request), session)
+
+        try:
+            correlation_id = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, channel)
+            ml_task.status=MLTaskStatus.QUEUED
+        except Exception as e:
+            logger.error(f"Error processing ML task: '{str(e)}'")
+            ml_task.status=MLTaskStatus.FAILED
+            raise e
+
+        ml_task = services.repository.ml_task.add_ml_task(ml_task, session)
 
         return ml_task
     except Exception as e:
@@ -251,8 +266,8 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
                                session=Depends(get_session)) -> List[Prediction]:
     try:
-        user = services.user.get_user_by_id(user_id, session)
-        predictions = services.prediction.get_predictions_by_user(user, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
+        predictions = services.repository.prediction.get_predictions_by_user(user, session)
         return list(predictions)
     except Exception as e:
         logger.error(f"Error getting user predictions: '{str(e)}'")
@@ -266,8 +281,8 @@ async def get_user_predictions(user_id: int = Path(..., description="user id"),
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
                                session=Depends(get_session)) -> List[Transaction]:
     try:
-        user = services.user.get_user_by_id(user_id, session)
-        transactions = services.transaction.get_transactions_by_user(user, session)
+        user = services.repository.user.get_user_by_id(user_id, session)
+        transactions = services.repository.transaction.get_transactions_by_user(user, session)
         return list(transactions)
     except Exception as e:
         logger.error(f"Error getting user transactions: '{str(e)}'")

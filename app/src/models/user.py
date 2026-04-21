@@ -15,7 +15,7 @@ class UserRole(str, Enum):
 
 class UserAuth(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
+    def __tablename__(self) -> str:
         return "user_auth"
 
     user_id: Optional[int] = Field(default=None, foreign_key="users.id", primary_key=True)
@@ -29,7 +29,7 @@ class UserAuth(SQLModel, table=True):
 
 class User(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
+    def __tablename__(self) -> str:
         return "users"
 
     id: Optional[int] = Field(default=None, primary_key=True, nullable=False)
@@ -41,9 +41,9 @@ class User(SQLModel, table=True):
 
     auth: Optional["UserAuth"] = Relationship(back_populates="user", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
-    balance: Optional[Decimal] = Field(nullable=True)
+    balance: Optional[Decimal] = Field(max_digits=15, decimal_places=4, nullable=True)
 
-    tasks: List["MLTask"] = Relationship(back_populates="user", sa_relationship_kwargs={"lazy": "selectin"})
+    ml_tasks: List["MLTask"] = Relationship(back_populates="user", sa_relationship_kwargs={"lazy": "selectin"})
 
     transactions: List["Transaction"] = Relationship(back_populates="user", sa_relationship_kwargs={"lazy": "selectin"})
 

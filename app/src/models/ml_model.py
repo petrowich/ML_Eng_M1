@@ -9,14 +9,14 @@ if TYPE_CHECKING:
 
 class MLModel(SQLModel, table=True):
     @declared_attr
-    def __tablename__(cls) -> str:
-        return "models"
+    def __tablename__(self) -> str:
+        return "ml_models"
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
     name: Optional[str] = Field(max_length=255)
     reference: Optional[str] = Field(min_length=1, max_length=50, nullable=False, unique=True, index=True)
     description: Optional[str] = Field(sa_column=Column(String(2000), nullable=False))
-    prediction_cost: Decimal = Field(default=Decimal("0.0"), max_digits=12, decimal_places=4)
+    prediction_cost: Decimal = Field(default=Decimal("0.0"), max_digits=8, decimal_places=4)
 
-    tasks: List["MLTask"] = Relationship(back_populates="model", sa_relationship_kwargs={"lazy": "selectin"})
+    ml_tasks: List["MLTask"] = Relationship(back_populates="ml_model", sa_relationship_kwargs={"lazy": "selectin"})
