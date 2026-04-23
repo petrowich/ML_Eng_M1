@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}ML Models{% endblock %}
+
+{% block content %}
+    <h1>ML Models</h1>
+    <form method="POST" action="/ml_models/submit_task/">
+        <label for="model">Select Model:</label>
+        <select id="model" name="model" required>
+            {% for m in models %}
+                <option value="{{ m.key }}">{{ m.value }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="text">Request:</label>
+        <textarea id="text" name="text" rows="5" required></textarea>
+
+        <button type="submit">Submit</button>
+    </form>
+{% endblock %}

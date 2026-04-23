@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+    <h1>ML service</h1>
+
+    {% if login %}
+    <p>{{ user_name }}</p>
+    {% endif %}
+    {% if not login %}
+        <p>Please <a href="/auth/signup">signup</a> or <a href="/auth/login">login</a></p>
+    {% endif %}
+
+{% endblock %}

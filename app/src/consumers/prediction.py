@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import time
+from sqlalchemy import Engine
 import services.repository.ml_model
 import services.repository.ml_task
 import services.repository.prediction
@@ -10,9 +11,8 @@ from pika import ConnectionParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exceptions import AMQPConnectionError
 from pika.spec import Basic, BasicProperties
-from sqlmodel import Session
+from sqlmodel import Session, create_engine
 from datasource.config import get_settings
-from datasource.database import get_engine
 from datasource.rabbitmq import get_queue_predictions, declare_queue
 from models.ml_task import MLTaskStatus
 from models.prediction import Prediction
@@ -25,11 +25,14 @@ settings = get_settings()
 
 
 class PredictionConsumer:
-    def __init__(self, parameters: ConnectionParameters):
-        self._parameters: ConnectionParameters = parameters
+    def __init__(self, amqp_param: ConnectionParameters, db_url, db_echo):
+        self._amqp_param: ConnectionParameters = amqp_param
+        self._db_url = db_url
+        self._db_echo = db_echo
         self._connection: BlockingConnection | None
         self._channel: BlockingChannel | None = None
         self._consumer_thread: threading.Thread | None = None
+        self._engine: Engine | None = None
         self._stop_event = threading.Event()
         self.queue=get_queue_predictions()
 
@@ -49,22 +52,20 @@ class PredictionConsumer:
             failure = data.get("failure")
             ml_model_id = None
             user_id = None
-            cost = None
 
-            engine = get_engine()
-
-            with Session(engine) as session:
+            with Session(self._engine) as session:
                 ml_task = services.repository.ml_task.get_ml_task_by_id(ml_task_id, session)
                 ml_model_id = ml_task.ml_model_id
                 user_id = ml_task.user_id
                 ml_task.status = status
+                ml_task.failure = failure
                 if duration_ms and isinstance(duration_ms, int):
                     ml_task.duration_ms = int(duration_ms)
                 logger.info(f"ML task status received ml_task_id={ml_task_id} → {status}")
                 services.repository.ml_task.add_ml_task(ml_task, session)
 
             if status == MLTaskStatus.COMPLETED:
-                with Session(engine) as session:
+                with Session(self._engine) as session:
                     logger.info(f"prediction received ml_task_id={ml_task_id}: '{result}'")
 
                     ml_task = services.repository.ml_task.get_ml_task_by_id(ml_task_id, session)
@@ -78,8 +79,10 @@ class PredictionConsumer:
 
                         withdraw = Transaction(user=user, type=TransactionType.WITHDRAW, amount=cost)
                         services.repository.transaction.add_transaction(withdraw, session)
-
                         logger.info(f"withdraw prediction cost: {cost}")
+
+                        services.repository.transaction.apply_transaction(withdraw, session)
+                        logger.info(f"apply transaction: {withdraw}")
                     except Exception as e:
                         logger.error(f"{e}")
                         session.rollback()
@@ -95,7 +98,8 @@ class PredictionConsumer:
     def _consume(self):
         while not self._stop_event.is_set():
             try:
-                self._connection = BlockingConnection(self._parameters)
+                self._engine = create_engine(url=self._db_url, echo=self._db_echo)
+                self._connection = BlockingConnection(self._amqp_param)
                 self._channel = self._connection.channel()
 
                 declare_queue(get_queue_predictions())
@@ -158,4 +162,7 @@ class PredictionConsumer:
 
         logger.info("consumer stopped")
 
-prediction_consumer = PredictionConsumer(parameters=settings.pika_connection_parameters)
+prediction_consumer = PredictionConsumer(amqp_param=settings.pika_connection_parameters,
+                                         db_url=settings.database_url_psycopg,
+                                         db_echo=settings.ENGINE_ECHO_DEBUG
+                                         )

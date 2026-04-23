@@ -5,7 +5,8 @@ from fastapi.params import Depends
 from starlette import status
 from datasource.database import get_session
 from models.prediction import Prediction
-
+from auth.authenticate import authenticate
+from models.user import UserRole
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -19,8 +20,10 @@ prediction_route = APIRouter()
                 summary="Prediction",
                 description="Get prediction data by prediction id")
 async def get_prediction(prediction_id: int = Path(..., description="prediction id"),
-                         session=Depends(get_session)) -> Prediction:
+                         session=Depends(get_session), current_login = Depends(authenticate)) -> Prediction:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         prediction = services.repository.prediction.get_prediction_by_id(prediction_id, session)
         return prediction
     except Exception as e:

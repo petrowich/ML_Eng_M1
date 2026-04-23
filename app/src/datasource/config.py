@@ -1,4 +1,5 @@
 import logging
+import socket
 from typing import Optional
 from functools import lru_cache
 from pika import ConnectionParameters, PlainCredentials
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
     QUEUE_ML_TASKS: Optional[str] = None
     QUEUE_PREDICTIONS: Optional[str] = None
 
+    COOKIE_NAME: Optional[str] = 'ML_SERVICE'
+    SECRET_KEY: Optional[str] = None
+
     @property
     def database_url_async(self) -> str:
         return (
@@ -49,7 +53,7 @@ class Settings(BaseSettings):
         rabbitmq_port = self.RABBITMQ_PORT or 5672
         rabbitmq_user = self.RABBITMQ_USER or 'guest'
         rabbitmq_password = self.RABBITMQ_PASSWORD or 'guest'
-        heartbeat=self.RABBITMQ_HEARTBEAT or 600
+        heartbeat=self.RABBITMQ_HEARTBEAT or 60
         blocked_connection_timeout=self.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT or 300
         credentials = PlainCredentials(username=rabbitmq_user, password=rabbitmq_password)
         
@@ -58,7 +62,12 @@ class Settings(BaseSettings):
             port=rabbitmq_port,
             credentials=credentials,
             heartbeat=heartbeat,
-            blocked_connection_timeout=blocked_connection_timeout)
+            blocked_connection_timeout=blocked_connection_timeout,
+            tcp_options={
+            socket.TCP_KEEPIDLE: 60,   # Начать keepalive после 60 сек простоя
+            socket.TCP_KEEPINTVL: 30,  # Интервал между пробами
+            socket.TCP_KEEPCNT: 3 # Кол-во неудачных проб перед сбросом
+            })
 
     @property
     def log_level(self) -> int:
@@ -72,6 +81,9 @@ class Settings(BaseSettings):
             return level
 
         raise ValueError(f"Invalid log level: '{self.LOG_LEVEL}' not in DEBUG, INFO, WARNING, ERROR, CRITICAL")
+
+    def auth_token_cookie_name(self) -> str:
+        return f"{self.COOKIE_NAME}_AUTH_TOKEN"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -103,6 +115,9 @@ class Settings(BaseSettings):
 
             'QUEUE_ML_TASKS': self.QUEUE_ML_TASKS,
             'QUEUE_PREDICTIONS': self.QUEUE_PREDICTIONS,
+
+            'COOKIE_NAME': self.COOKIE_NAME,
+            'SECRET_KEY': self.SECRET_KEY,
         }
         for field_name, field_value in required_fields.items():
             if field_value is None:

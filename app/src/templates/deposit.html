@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Deposit{% endblock %}
+
+{% block content %}
+    <div class="deposit-container">
+        <h1>Deposit Funds</h1>
+
+        <form method="POST" action="/account/deposit" class="deposit-form">
+            <div class="form-group">
+                <label for="amount">Amount (10 to 500):</label>
+                <input type="number" id="amount" name="amount" class="input-field" min="10" max="500" step="1" required>
+            </div>
+
+            <button type="submit" class="submit-button">Deposit</button>
+        </form>
+    </div>
+{% endblock %}

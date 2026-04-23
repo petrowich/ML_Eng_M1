@@ -5,11 +5,13 @@ import services.repository.ml_task
 import services.repository.prediction
 import services.repository.user
 import services.mq.ml_task
+from fastapi.security import OAuth2PasswordRequestForm
 from decimal import Decimal
-from typing import List
+from typing import List, Dict
 from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
 from starlette import status
+from auth.oauth2 import create_access_token
 from datasource.database import get_session
 from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_channel
 from models.ml_task import MLTask, MLTaskStatus
@@ -17,6 +19,8 @@ from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType
 from models.user import User, UserAuth, UserRole
 from pydantic import Field, BaseModel
+from auth.hash import create_hash, verify_hash
+from auth.authenticate import authenticate
 
 
 logger = logging.getLogger(__name__)
@@ -24,11 +28,10 @@ logging.basicConfig(level=logging.INFO)
 
 user_route = APIRouter()
 
-
-class UserAuthRequest(BaseModel):
+class UserSignupRequest(BaseModel):
     login: str = Field(..., description="User login")
     email: str = Field(..., description="User email")
-    pwd_hash: str = Field(..., description="password")
+    password: str = Field(..., description="password")
 
 class UserAuthResponse(BaseModel):
     message: str = Field(description="Response message")
@@ -38,26 +41,27 @@ class UserAuthResponse(BaseModel):
                  status_code=status.HTTP_201_CREATED,
                  summary="User registration",
                  description="Register a new user")
-async def signup(request: UserAuthRequest = Body(...),
+async def signup(request: UserSignupRequest = Body(...),
                  session=Depends(get_session)) -> UserAuthResponse:
     try:
         if services.repository.user.get_user_by_login(request.login, session):
             logger.warning(f"User login '{request.login}' already exists")
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Login '{request.login}' is already in use")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Login '{request.login}' is already in use")
 
         if services.repository.user.get_user_by_email(request.email, session):
             logger.warning(f"User email '{request.email}' is already registered")
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email '{request.email}' is already registered")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Email '{request.email}' is already registered")
 
-        auth = UserAuth(login=request.login, pwd_hash=request.pwd_hash)
-        user = User(auth=auth, email=request.email)
+        password_hash = create_hash(request.password)
+        user_auth = UserAuth(login=request.login, pwd_hash=password_hash)
+        user = User(auth=user_auth, email=request.email)
         services.repository.user.add_user(user, session)
 
         logger.info(f"New user with login '{request.login}' created")
 
         return UserAuthResponse(message="User created successfully")
     except Exception as e:
-        logger.error(f"Error signing up: '{str(e)}'")
+        logger.error(f"Error signup: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to signup")
 
 @user_route.post("/signin",
@@ -65,25 +69,29 @@ async def signup(request: UserAuthRequest = Body(...),
                  status_code=status.HTTP_200_OK,
                  summary="User authentication",
                  description="Authenticate user with provided credentials")
-async def signin(request: UserAuthRequest = Body(...),
-                 session=Depends(get_session)) -> UserAuthResponse:
+async def signin(form_data: OAuth2PasswordRequestForm = Depends(), session=Depends(get_session)) -> Dict:
     try:
-        user = services.repository.user.get_user_by_login(request.login, session)
+        user = services.repository.user.get_user_by_login(form_data.username, session)
 
         if not user:
-            user = services.repository.user.get_user_by_email(request.login, session)
+            user = services.repository.user.get_user_by_email(form_data.username, session)
 
         if not user:
-            logger.warning(f"Trying to sign in with non-existent login name or email: '{request.login}'")
+            logger.warning(f"Trying to sign in with non-existent login name or email: '{form_data.username}'")
             raise HTTPException(status_code=status.HTTP_401, detail="Wrong login name or email")
 
-        auth = user.auth
+        user_auth = user.auth
+        password_hash = create_hash(form_data.password)
 
-        if not auth or auth.pwd_hash != request.pwd_hash:
+        if not user_auth or verify_hash(user_auth.pwd_hash, password_hash):
             logger.warning(f"Trying to sign in with wrong credentials")
             raise HTTPException(status_code=status.HTTP_403, detail="Wrong credentials")
 
-        return UserAuthResponse(message=f"Authenticated successfully: '{user}'")
+        logger.info(f"Authenticated successfully: '{user}'")
+        access_token = create_access_token(user_auth.login)
+        return {"access_token": access_token, "token_type": "Bearer"}
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error signing in: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to signin")
@@ -94,8 +102,10 @@ async def signin(request: UserAuthRequest = Body(...),
                 summary="User",
                 description="Get user data by user id")
 async def get_user(user_id: int = Path(..., description="user id"),
-                   session=Depends(get_session)) -> User:
+                   session=Depends(get_session), current_login=Depends(authenticate)) -> User:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         return user
     except Exception as e:
@@ -114,8 +124,10 @@ class UserUpdateRequest(BaseModel):
                  description="Update user data")
 async def update(user_id: int = Path(..., description="user id"),
                  request: UserUpdateRequest = Body(...),
-                 session=Depends(get_session)) -> User:
+                 session=Depends(get_session), current_login=Depends(authenticate)) -> User:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
 
         if user.email!=request.email and services.repository.user.get_user_by_email(request.email, session):
@@ -129,8 +141,8 @@ async def update(user_id: int = Path(..., description="user id"),
 
         return user
     except Exception as e:
-        logger.error(f"Error signing in: '{str(e)}'")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to signin")
+        logger.error(f"Error updating user: '{str(e)}'")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to user update")
 
 
 class BalanceResponse(BaseModel):
@@ -142,8 +154,10 @@ class BalanceResponse(BaseModel):
                 summary="User balance",
                 description="Get current user balance by user id")
 async def get_balance(user_id: int = Path(..., description="user id"),
-                      session=Depends(get_session)) -> BalanceResponse:
+                      session=Depends(get_session), current_login=Depends(authenticate)) -> BalanceResponse:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         balance = user.balance if user.balance else Decimal(0.0)
         response = BalanceResponse(balance=float(balance))
@@ -168,8 +182,10 @@ class DepositResponse(BaseModel):
                  description="Deposit funds by user id")
 async def deposit(user_id: int = Path(..., description="user id"),
                   request: DepositRequest = Body(...),
-                  session=Depends(get_session)) -> DepositResponse:
+                  session=Depends(get_session), current_login=Depends(authenticate)) -> DepositResponse:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         transaction = Transaction(user=user, type=TransactionType.DEPOSIT, amount=request.amount)
         services.repository.transaction.add_transaction(transaction, session)
@@ -187,8 +203,10 @@ async def deposit(user_id: int = Path(..., description="user id"),
                 status_code=status.HTTP_200_OK,
                 summary="All users",
                 description="List of all users")
-async def get_all_users(session=Depends(get_session)) -> List[User]:
+async def get_all_users(session=Depends(get_session), current_login=Depends(authenticate)) -> List[User]:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         users = services.repository.user.get_all_users(session)
         return list(users)
     except Exception as e:
@@ -201,8 +219,10 @@ async def get_all_users(session=Depends(get_session)) -> List[User]:
                 summary="User ML tasks",
                 description="List of user ML tasks")
 async def get_user_ml_tasks(user_id: int = Path(..., description="user id"),
-                             session=Depends(get_session)) -> List[MLTask]:
+                             session=Depends(get_session), current_login=Depends(authenticate)) -> List[MLTask]:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         ml_task = services.repository.ml_task.get_ml_tasks_by_user(user, session)
         return list(ml_task)
@@ -225,8 +245,10 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
                          session=Depends(get_session),
                          queue_ml_tasks=Depends(get_queue_ml_tasks),
                          queue_predictions=Depends(get_queue_predictions),
-                         channel=Depends(get_channel)) -> MLTask:
+                         channel=Depends(get_channel), current_login=Depends(authenticate)) -> MLTask:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
@@ -264,8 +286,10 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
                 summary="User predictions",
                 description="List of user predictions")
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
-                               session=Depends(get_session)) -> List[Prediction]:
+                               session=Depends(get_session), current_login=Depends(authenticate)) -> List[Prediction]:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         predictions = services.repository.prediction.get_predictions_by_user(user, session)
         return list(predictions)
@@ -279,8 +303,10 @@ async def get_user_predictions(user_id: int = Path(..., description="user id"),
                 summary="User transactions",
                 description="List of user transactions")
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
-                               session=Depends(get_session)) -> List[Transaction]:
+                               session=Depends(get_session), current_login=Depends(authenticate)) -> List[Transaction]:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         user = services.repository.user.get_user_by_id(user_id, session)
         transactions = services.repository.transaction.get_transactions_by_user(user, session)
         return list(transactions)
