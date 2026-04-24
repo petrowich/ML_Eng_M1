@@ -8,7 +8,8 @@ from starlette import status
 from datasource.database import get_session
 from models.ml_model import MLModel
 from pydantic import Field, BaseModel
-
+from auth.authenticate import authenticate
+from models.user import UserRole
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -22,8 +23,10 @@ model_route = APIRouter()
                 summary="ML Model",
                 description="Get ML model data by model id")
 async def get_ml_model(model_id: int = Path(..., description="model id"),
-                      session=Depends(get_session)) -> MLModel:
+                      session=Depends(get_session), current_login = Depends(authenticate)) -> MLModel:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         ml_model = services.repository.ml_model.get_ml_model_by_id(model_id, session)
         return ml_model
     except Exception as e:
@@ -42,8 +45,11 @@ class RegisterMLModelRequest(BaseModel):
                   status_code=status.HTTP_201_CREATED,
                   summary="Register ML Model",
                   description="Register new or update existent ML model")
-async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session)) -> MLModel:
+async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session), current_login = Depends(authenticate)) -> MLModel:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
         if not ml_model:
@@ -65,8 +71,11 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
                 status_code=status.HTTP_200_OK,
                 summary="All ML models",
                 description="List of all ML models")
-async def get_all(session=Depends(get_session)) -> List[MLModel]:
+async def get_all(session=Depends(get_session), current_login = Depends(authenticate)) -> List[MLModel]:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
         ml_models = services.repository.ml_model.get_all_ml_models(session)
         return list(ml_models)
     except Exception as e:

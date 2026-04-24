@@ -2,6 +2,11 @@ SQLAlchemy
 sqlmodel
 pydantic-settings
 psycopg[binary,pool]
+asyncpg
 fastapi
 uvicorn
 pika
+python-jose
+passlib[bcrypt]
+jinja2
+python-multipart

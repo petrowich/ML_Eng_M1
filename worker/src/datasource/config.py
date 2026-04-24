@@ -1,7 +1,7 @@
 import logging
+import socket
 from typing import Optional
 from functools import lru_cache
-
 from pika import ConnectionParameters, PlainCredentials
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,8 +27,8 @@ class Settings(BaseSettings):
         rabbitmq_port = self.RABBITMQ_PORT or 5672
         rabbitmq_user = self.RABBITMQ_USER or 'guest'
         rabbitmq_password = self.RABBITMQ_PASSWORD or 'guest'
-        heartbeat=self.RABBITMQ_HEARTBEAT
-        blocked_connection_timeout=self.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT
+        heartbeat = self.RABBITMQ_HEARTBEAT or 60
+        blocked_connection_timeout = self.RABBITMQ_BLOCKED_CONNECTION_TIMEOUT or 300
         credentials = PlainCredentials(username=rabbitmq_user, password=rabbitmq_password)
 
         return ConnectionParameters(
@@ -36,7 +36,12 @@ class Settings(BaseSettings):
             port=rabbitmq_port,
             credentials=credentials,
             heartbeat=heartbeat,
-            blocked_connection_timeout=blocked_connection_timeout)
+            blocked_connection_timeout=blocked_connection_timeout,
+            tcp_options={
+            socket.TCP_KEEPIDLE: 60,   # Начать keepalive после 60 сек простоя
+            socket.TCP_KEEPINTVL: 30,  # Интервал между пробами
+            socket.TCP_KEEPCNT: 3 # Кол-во неудачных проб перед сбросом
+            })
 
     model_config = SettingsConfigDict(
         env_file=".env",

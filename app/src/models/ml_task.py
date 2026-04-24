@@ -46,4 +46,6 @@ class MLTask(SQLModel, table=True):
     status: MLTaskStatus = Field(default=MLTaskStatus.NEW, sa_column=Column(SQLEnum(MLTaskStatus), nullable=False))
     duration_ms: int = Field(default=0)
 
+    failure: Optional[str] = Field(sa_column=Column(Text, nullable=True))
+
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}ML Tasks{% endblock %}
+
+{% block content %}
+    <h1>ML Tasks</h1>
+    <div class="task-list">
+        {% for task in tasks %}
+            <div class="task-block">
+                <div class="task-header">
+                    <span>{{ task.datetime }} - {{ task.model_name }}</span>
+                </div>
+                <div class="task-info">
+                    <span class="status {% if task.status|lower == 'completed' %}status-completed{% elif task.status|lower == 'failed' %}status-failed{% endif %}">Status: {{ task.status }}</span>
+                    <span>Duration: {{ task.duration }} ms</span>
+                    <span>Cost: {{ task.cost }}</span>
+                </div>
+                <div class="task-request-label">Request</div>
+                <p class="task-request-text">{{ task.request }}</p>
+                {% if task.status|lower == 'failed' %}
+                    <div class="task-prediction-label">Failure:</div>
+                    <p class="task-prediction-text failed-prediction">{{ task.prediction }}</p>
+                {% else %}
+                    <div class="task-prediction-label">{% if task.status|lower != 'failed' %}Prediction:{% else %}Failure:{% endif %}</div>
+                    <p class="task-prediction-text">{{ task.prediction }}</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}

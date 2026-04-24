@@ -1,12 +1,21 @@
 import uvicorn
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
+from starlette.responses import RedirectResponse, JSONResponse
+from starlette.staticfiles import StaticFiles
+from starlette.status import HTTP_303_SEE_OTHER
+
 from datasource.config import get_settings
 from datasource.database import init_db
 from datasource.rabbitmq import declare_queue, get_queue_ml_tasks
 from routes.home import home_route
+from routes.auth import auth_ui_route
+from routes.account import account_ui_route
+from routes.ml_model import ml_models_ui_route
+from routes.ml_task import ml_tasks_ui_route
 from routes.v0.ml_task import task_route
 from routes.v0.ml_model import model_route
 from routes.v0.prediction import prediction_route
@@ -29,7 +38,7 @@ async def lifespan(app: FastAPI):
     try:
         app.state.cache = {}
         logger.info("initializing db")
-        init_db(drop_all=True)
+        init_db(drop_all=False)
         logger.info("db has been initialized")
         logger.info("creating ML tasks queue")
         declare_queue(get_queue_ml_tasks())
@@ -67,7 +76,27 @@ app.add_middleware(
         allow_headers=["*"],
     )
 
-app.include_router(home_route, tags=["Home"])
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    auth_details = {"Invalid token", "Not authenticated", "Token expired!"}
+
+    if exc.detail in auth_details:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            response = RedirectResponse(url="/", status_code=HTTP_303_SEE_OTHER)
+            response.delete_cookie(settings.auth_token_cookie_name())
+            return response
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+app.include_router(home_route, tags=["Home"], include_in_schema=False)
+app.include_router(auth_ui_route, prefix='/auth', tags=['Auth'], include_in_schema=False)
+app.include_router(account_ui_route, prefix='/account', tags=['Account'], include_in_schema=False)
+app.include_router(ml_models_ui_route, prefix='/ml_models', tags=['MLModel'], include_in_schema=False)
+app.include_router(ml_tasks_ui_route, prefix='/ml_tasks', tags=['MLTasks'], include_in_schema=False)
+
 app.include_router(user_route, prefix="/api/v0/users", tags=["Users"])
 app.include_router(model_route, prefix="/api/v0/models", tags=["MLModel"])
 app.include_router(task_route, prefix="/api/v0/tasks", tags=["MLTasks"])

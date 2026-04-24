@@ -6,7 +6,8 @@ from fastapi.params import Depends
 from starlette import status
 from datasource.database import get_session
 from models.transaction import Transaction
-
+from auth.authenticate import authenticate
+from models.user import UserRole
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -20,8 +21,10 @@ transaction_route = APIRouter()
                 summary="Transaction",
                 description="Get transaction data by transaction id")
 async def get_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session)) -> Transaction:
+                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         return transaction
@@ -35,8 +38,10 @@ async def get_transaction(transaction_id: str = Path(..., description="transacti
                 summary="Apply transaction",
                 description="Apply pending transaction")
 async def apply_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session)) -> Transaction:
+                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.apply_transaction(transaction, session)
@@ -51,8 +56,10 @@ async def apply_transaction(transaction_id: str = Path(..., description="transac
                 summary="Cancel transaction",
                 description="Cancel pending transaction")
 async def cancel_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session)) -> Transaction:
+                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.cancel_transaction(transaction, session)
@@ -67,8 +74,10 @@ async def cancel_transaction(transaction_id: str = Path(..., description="transa
                 summary="Refund transaction",
                 description="Refund completed transaction")
 async def refund_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session)) -> Transaction:
+                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
     try:
+        if not current_login or current_login.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden")
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.refund_transaction(transaction, session)

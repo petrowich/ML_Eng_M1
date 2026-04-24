@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Account{% endblock %}
+
+{% block content %}
+    <div class="container mt-5">
+        <h1>Your Account</h1>
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Personal Information</h5>
+                <a href="/account/profile" class="btn btn-secondary mt-3">profile</a>
+                <p>{{ user.name | default("Not provided", true) }}</p>
+                <p><strong>role:</strong> {{ user.role.name | default("", true) }}</p>
+                <p><strong>email:</strong> {{ user.email | default("", true) }}</p>
+                <p><strong>Balance:</strong> {{ "%.2f" | format(user.balance | default(0, true)) }} USD
+                    <a href="/account/deposit" class="btn btn-secondary mt-3">replenish</a>
+                    <a href="/account/transactions" class="btn btn-secondary mt-3">transactions</a>
+                </p>
+            </div>
+        </div>
+    </div>
+{% endblock %}
