@@ -1,9 +1,8 @@
 import logging
 from decimal import Decimal
 from typing import List, Dict, Sequence
-
+from sqlmodel import Session
 from starlette.responses import RedirectResponse
-
 import services.repository.user
 import services.repository.transaction
 import services.repository.ml_model
@@ -29,8 +28,11 @@ templates = Jinja2Templates(directory="templates")
 
 AUTH_TOKEN_COOKIE_NAME = settings.auth_token_cookie_name()
 
+
 @ml_models_ui_route.get("/", response_class=HTMLResponse, summary="ML Models", description="ML model request")
-async def ml_models_get(request: Request, current_user: User = Depends(get_current_user), session=Depends(get_session)):
+async def ml_models_get(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         ml_models: Sequence[MLModel] = services.repository.ml_model.get_all_ml_models(session)
@@ -43,15 +45,17 @@ async def ml_models_get(request: Request, current_user: User = Depends(get_curre
         context={"request": request, "login": login, "error_msg": f"Error processing deposit: {error_msg}", "back_url": "/"}
         return templates.TemplateResponse(request=request, name="error.html", context=context)
 
-@ml_models_ui_route.post("/submit_task/", response_class=HTMLResponse, summary="Submit ML Task", description="Submit a new ML task")
+@ml_models_ui_route.post("/submit_task", response_class=HTMLResponse, summary="Submit ML Task", description="Submit a new ML task")
 async def submit_task(request: Request,
                                 model: str = Form(...),
                                 text: str = Form(...),
                                 current_user: User = Depends(get_current_user),
-                                session=Depends(get_session),
+                                session: Session =Depends(get_session),
                                 queue_ml_tasks=Depends(get_queue_ml_tasks),
                                 queue_predictions=Depends(get_queue_predictions),
                                 channel=Depends(get_channel)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         if not model or not text:
@@ -65,25 +69,32 @@ async def submit_task(request: Request,
         prediction_cost = ml_model.prediction_cost if ml_model.prediction_cost else Decimal(0.0)
 
         if balance <= prediction_cost:
-            logger.warning(f"Insufficient funds")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient funds")
+            logger.error(f"Insufficient funds")
+            raise Exception("Insufficient funds!")
 
-        ml_task = services.repository.ml_task.add_ml_task(MLTask(user=current_user, ml_model=ml_model, request=text), session)
+        user = services.repository.user.get_user_by_login(login, session)
+        ml_task = MLTask(user=user, ml_model=ml_model, request=text)
+        ml_task = services.repository.ml_task.add_ml_task(ml_task, session)
+
+        session.commit()
 
         try:
             correlation_id = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, channel)
             ml_task.status=MLTaskStatus.QUEUED
+            services.repository.ml_task.add_ml_task(ml_task, session)
+            session.commit()
+            logger.info(f"Queued ML task {ml_task.ml_model.reference} {ml_task.request} to {queue_ml_tasks}")
         except Exception as e:
             logger.error(f"Error processing ML task: '{str(e)}'")
             ml_task.status=MLTaskStatus.FAILED
+            services.repository.ml_task.add_ml_task(ml_task, session)
+            session.commit()
             raise e
-        context = {"request": request, "login": login}
+
         return RedirectResponse(url="/ml_tasks", status_code=status.HTTP_303_SEE_OTHER)
 
-    except HTTPException as he:
-        raise he
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Error submitting task: {error_msg}")
-        context = {"request": request, "login": login, "error_msg": f"Error submitting task: {error_msg}", "back_url": "/ml_models/"}
+        context = {"request": request, "login": login, "error": "Error submitting task", "error_msg": f"{error_msg}", "back_url": "/ml_models/"}
         return templates.TemplateResponse(request=request, name="error.html", context=context)

@@ -1,6 +1,7 @@
 from typing import Iterable, Sequence, Optional
 from sqlmodel import Session, select
 from models.ml_model import MLModel
+from models.ml_task import MLTask
 
 
 def get_ml_model_by_id(ml_model_id: int, session: Session) -> MLModel:
@@ -16,7 +17,7 @@ def get_ml_model_by_id(ml_model_id: int, session: Session) -> MLModel:
 def add_ml_model(ml_model: MLModel, session: Session) -> MLModel:
     try:
         session.add(ml_model)
-        session.commit()
+        session.flush()
         session.refresh(ml_model)
         return ml_model
     except Exception:
@@ -26,7 +27,7 @@ def add_ml_model(ml_model: MLModel, session: Session) -> MLModel:
 def add_ml_models(ml_models: Iterable[MLModel], session: Session) -> Iterable[MLModel]:
     try:
         session.add_all([ml_model for ml_model in ml_models])
-        session.commit()
+        session.flush()
         for ml_model in ml_models:
             session.refresh(ml_model)
         return ml_models
@@ -37,7 +38,7 @@ def add_ml_models(ml_models: Iterable[MLModel], session: Session) -> Iterable[ML
 def delete_ml_model(ml_model: MLModel, session: Session):
     try:
         session.delete(ml_model)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -46,7 +47,7 @@ def delete_ml_models(ml_models: Iterable[MLModel], session: Session):
     try:
         for ml_model in ml_models:
             session.delete(ml_model)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -64,6 +65,17 @@ def get_ml_model_by_reference(ml_model_reference: str, session: Session) -> Opti
         ml_model = session.exec(stmt).first()
         if ml_model and isinstance(ml_model, MLModel):
             return ml_model
+        return None
+    except Exception:
+        raise
+
+def get_ml_model_by_ml_task(ml_task: MLTask, session: Session) -> Optional[MLModel]:
+    try:
+        if ml_task.ml_model_id is not None:
+            stmt = select(MLModel).where(MLModel.id == ml_task.ml_model_id)
+            ml_model = session.exec(stmt).first()
+            if ml_model and isinstance(ml_model, MLModel):
+                return ml_model
         return None
     except Exception:
         raise

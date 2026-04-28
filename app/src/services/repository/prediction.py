@@ -18,7 +18,7 @@ def get_prediction_by_id(prediction_id: int, session: Session) -> Prediction:
 def add_prediction(prediction: Prediction, session: Session) -> Prediction:
     try:
         session.add(prediction)
-        session.commit()
+        session.flush()
         session.refresh(prediction)
         return prediction
     except Exception:
@@ -28,7 +28,7 @@ def add_prediction(prediction: Prediction, session: Session) -> Prediction:
 def add_predictions(predictions: Iterable[Prediction], session: Session) -> Iterable[Prediction]:
     try:
         session.add_all([prediction for prediction in predictions])
-        session.commit()
+        session.flush()
         for prediction in predictions:
             session.refresh(prediction)
         return predictions
@@ -39,7 +39,7 @@ def add_predictions(predictions: Iterable[Prediction], session: Session) -> Iter
 def delete_prediction(prediction: Prediction, session: Session):
     try:
         session.delete(prediction)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -48,7 +48,7 @@ def delete_predictions(predictions: Iterable[Prediction], session: Session):
     try:
         for prediction in predictions:
             session.delete(prediction)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -64,5 +64,16 @@ def get_predictions_by_user(user: User, session: Session) -> Sequence[Prediction
     try:
         stmt = select(Prediction).join(MLTask).join(User).where(User.id == user.id)
         return session.exec(stmt).all()
+    except Exception:
+        raise
+
+def exists_for_task(ml_task: MLTask, session: Session) -> bool:
+    try:
+        if ml_task.id:
+            stmt = select(Prediction).where(Prediction.ml_task_id == ml_task.id)
+            prediction = session.exec(stmt).first()
+            if prediction and isinstance(prediction, Prediction):
+                return True
+        return False
     except Exception:
         raise

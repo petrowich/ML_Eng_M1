@@ -1,10 +1,10 @@
 import logging
 from typing import List, Dict
-
+from sqlmodel import Session
 import services.repository.user
 import services.repository.transaction
 from starlette.responses import RedirectResponse
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from auth.oauth2 import get_current_user
@@ -36,9 +36,10 @@ async def account(request: Request, current_user: User = Depends(get_current_use
 
 @account_ui_route.get("/profile", response_class=HTMLResponse, summary="Profile", description="User profile page")
 async def profile_get(request: Request, current_user: User = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
-    return templates.TemplateResponse(request,"profile.html", context={"request": request, "login": login, "user": current_user}
-    )
+    return templates.TemplateResponse(request,"profile.html", context={"request": request, "login": login, "user": current_user})
 
 @account_ui_route.post("/profile", response_class=HTMLResponse)
 async def profile_post(
@@ -46,8 +47,10 @@ async def profile_post(
     name: str = Form(...),
     email: str = Form(...),
     current_user: User = Depends(get_current_user),
-    session=Depends(get_session)
+    session: Session = Depends(get_session)
 ):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         if not name.strip():
@@ -68,7 +71,10 @@ async def profile_post(
                                                   )
         current_user.name = name
         current_user.email = email
-        user = services.repository.user.add_user(current_user, session)
+        services.repository.user.add_user(current_user, session)
+
+        session.commit()
+
         context = {"request": request,
                    "login": login,
                    "user": current_user
@@ -82,16 +88,21 @@ async def profile_post(
 
 @account_ui_route.get("/deposit", response_class=HTMLResponse, summary="Deposit", description="Account replenish page")
 async def profile_get(request: Request, current_user: User = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     return templates.TemplateResponse(request,"deposit.html", context={"request": request, "login": login})
 
 @account_ui_route.post("/deposit", response_class=HTMLResponse)
-async def profile_post(request: Request, amount: int = Form(...), current_user: User = Depends(get_current_user), session=Depends(get_session)):
+async def profile_post(request: Request, amount: int = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         transaction = Transaction(user=current_user, type=TransactionType.DEPOSIT, amount=amount)
         services.repository.transaction.add_transaction(transaction, session)
         services.repository.transaction.apply_transaction(transaction, session)
+        session.commit()
         context = {"request": request,
                    "login": login,
                    "user": current_user
@@ -104,8 +115,10 @@ async def profile_post(request: Request, amount: int = Form(...), current_user: 
         return templates.TemplateResponse(request=request, name="error.html", context=context)
 
 
-@account_ui_route.get("/transactions/", response_class=HTMLResponse)
-async def get_transactions(request: Request, current_user: User = Depends(get_current_user), session=Depends(get_session)):
+@account_ui_route.get("/transactions", response_class=HTMLResponse)
+async def get_transactions(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         transactions = services.repository.transaction.get_transactions_by_user(current_user, session)

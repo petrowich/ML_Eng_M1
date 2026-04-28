@@ -1,9 +1,8 @@
 import uuid
-
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Column, Relationship, Text
+from sqlmodel import SQLModel, Field, Column, Relationship, Text, DateTime
 from sqlalchemy.types import Enum as SQLEnum
 from sqlalchemy.orm import declared_attr
 
@@ -30,10 +29,10 @@ class MLTask(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    user_id: int = Field(foreign_key="users.id")
+    user_id: Optional[int] = Field(foreign_key="users.id", nullable=False)
     user: Optional["User"] = Relationship(back_populates="ml_tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
-    ml_model_id: int = Field(foreign_key="ml_models.id")
+    ml_model_id: Optional[int] = Field(foreign_key="ml_models.id", nullable=False)
     ml_model: Optional["MLModel"] = Relationship(back_populates="ml_tasks", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
     prediction: Optional["Prediction"] = Relationship(back_populates="ml_task", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
@@ -44,8 +43,8 @@ class MLTask(SQLModel, table=True):
     request: Optional[str] = Field(sa_column=Column(Text, nullable=True))
 
     status: MLTaskStatus = Field(default=MLTaskStatus.NEW, sa_column=Column(SQLEnum(MLTaskStatus), nullable=False))
-    duration_ms: int = Field(default=0)
+    duration_ms: int = Field(default=0, nullable=False)
 
     failure: Optional[str] = Field(sa_column=Column(Text, nullable=True))
 
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True), nullable=False))

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlmodel import Session, select
 from models.transaction import Transaction, TransactionType, TransactionStatus
 from models.user import User
-from services.repository.user import get_user_by_id
+from services.repository.user import get_user_by_id, get_user_by_ml_transaction
 
 
 def get_transaction_by_id(transaction_id: UUID, session: Session) -> Transaction:
@@ -21,16 +21,16 @@ def get_transaction_by_id(transaction_id: UUID, session: Session) -> Transaction
 
 def apply_transaction(transaction: Transaction, session: Session) -> Transaction:
     try:
-        transaction = get_transaction_by_id(transaction.id, session)
+        session.refresh(transaction)
+
         if transaction.status!=TransactionStatus.PENDING:
             raise ValueError(f"Invalid transaction status {transaction.status}")
 
-        user = transaction.user
+        user = get_user_by_ml_transaction(transaction,  session)
 
-        if not user or not user.id:
+        if not user:
             raise ValueError("Invalid transaction user")
 
-        user = get_user_by_id(user.id,  session)
         user_balance = user.balance if user.balance else Decimal(0.0)
 
         if transaction.type==TransactionType.DEPOSIT:
@@ -45,7 +45,7 @@ def apply_transaction(transaction: Transaction, session: Session) -> Transaction
 
         session.add(transaction)
         session.add(user)
-        session.commit()
+        session.flush()
         session.refresh(transaction)
         return transaction
     except Exception:
@@ -54,7 +54,8 @@ def apply_transaction(transaction: Transaction, session: Session) -> Transaction
 
 def cancel_transaction(transaction: Transaction, session: Session):
     try:
-        transaction = get_transaction_by_id(transaction.id, session)
+        session.refresh(transaction)
+
         if transaction.status!=TransactionStatus.PENDING:
             raise ValueError(f"Invalid transaction status {transaction.status}")
 
@@ -71,7 +72,7 @@ def cancel_transaction(transaction: Transaction, session: Session):
         transaction.balance = user_balance
 
         session.add(transaction)
-        session.commit()
+        session.flush()
         session.refresh(transaction)
         return transaction
     except Exception:
@@ -80,7 +81,8 @@ def cancel_transaction(transaction: Transaction, session: Session):
 
 def refund_transaction(transaction: Transaction, session: Session) -> Transaction:
     try:
-        transaction = get_transaction_by_id(transaction.id, session)
+        session.refresh(transaction)
+
         if transaction.status!=TransactionStatus.COMPLETED:
             raise ValueError(f"Invalid transaction status {transaction.status}")
 
@@ -104,7 +106,7 @@ def refund_transaction(transaction: Transaction, session: Session) -> Transactio
 
         session.add(transaction)
         session.add(user)
-        session.commit()
+        session.flush()
         session.refresh(transaction)
         return transaction
     except Exception:
@@ -115,7 +117,8 @@ def add_transaction(transaction: Transaction, session: Session) -> Transaction:
     try:
         transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)
         session.add(transaction)
-        session.commit()
+        session.flush()
+        session.refresh(transaction)
         return transaction
     except Exception:
         session.rollback()
@@ -126,7 +129,7 @@ def add_transactions(transactions: Iterable[Transaction], session: Session) -> I
         for transaction in transactions:
             transaction.balance = transaction.user.balance if transaction.user and transaction.user.balance else Decimal(0.0)
         session.add_all([transaction for transaction in transactions])
-        session.commit()
+        session.flush()
         for transaction in transactions:
             session.refresh(transaction)
         return transactions
@@ -137,7 +140,6 @@ def add_transactions(transactions: Iterable[Transaction], session: Session) -> I
 def delete_transaction(transaction: Transaction, session: Session):
     try:
         session.delete(transaction)
-        session.commit()
     except Exception:
         session.rollback()
         raise
@@ -146,7 +148,6 @@ def delete_transactions(transactions: Iterable[Transaction], session: Session):
     try:
         for transaction in transactions:
             session.delete(transaction)
-        session.commit()
     except Exception:
         session.rollback()
         raise

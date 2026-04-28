@@ -34,10 +34,10 @@ class Transaction(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
 
-    user_id: int = Field(foreign_key="users.id", nullable=False)
+    user_id: Optional[int] = Field(foreign_key="users.id", nullable=False)
     user: Optional["User"] = Relationship(back_populates="transactions", sa_relationship_kwargs={"lazy": "selectin", "uselist": False})
 
-    type: TransactionType = Field(default=TransactionType.DEPOSIT, sa_column=Column(SQLEnum(TransactionType), nullable=False))
+    type: TransactionType = Field(sa_column=Column(SQLEnum(TransactionType), nullable=False))
     status: TransactionStatus = Field(default=TransactionStatus.PENDING, sa_column=Column(SQLEnum(TransactionStatus), nullable=False))
     amount: Decimal = Field(max_digits=15, decimal_places=4, nullable=False)
     balance: Decimal = Field(max_digits=15, decimal_places=4, nullable=False)

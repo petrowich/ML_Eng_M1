@@ -89,7 +89,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="static", check_dir=False), name="static")
 
 app.include_router(home_route, tags=["Home"], include_in_schema=False)
 app.include_router(auth_ui_route, prefix='/auth', tags=['Auth'], include_in_schema=False)

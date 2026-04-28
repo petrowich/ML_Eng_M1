@@ -1,4 +1,8 @@
 import logging
+
+from sqlmodel import Session
+from starlette.responses import RedirectResponse
+
 import services.repository.user
 import services.repository.transaction
 import services.repository.ml_model
@@ -25,7 +29,9 @@ AUTH_TOKEN_COOKIE_NAME = settings.auth_token_cookie_name()
 
 
 @ml_tasks_ui_route.get("/", response_class=HTMLResponse, summary="ML Tasks", description="ML tasks history")
-async def ml_models_get(request: Request, current_user: User = Depends(get_current_user), session=Depends(get_session)):
+async def ml_models_get(request: Request, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    if not current_user:
+        return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
     try:
         ml_tasks: Sequence[MLTask] = services.repository.ml_task.get_ml_tasks_by_user(current_user, session)
