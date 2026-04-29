@@ -21,7 +21,7 @@ def get_ml_task_by_id(ml_task_id: int, session: Session) -> MLTask:
 def add_ml_task(ml_task: MLTask, session: Session) -> MLTask:
     try:
         session.add(ml_task)
-        session.commit()
+        session.flush()
         session.refresh(ml_task)
         return ml_task
     except Exception:
@@ -31,7 +31,7 @@ def add_ml_task(ml_task: MLTask, session: Session) -> MLTask:
 def add_ml_tasks(ml_tasks: Iterable[MLTask], session: Session) -> Iterable[MLTask]:
     try:
         session.add_all([ml_task for ml_task in ml_tasks])
-        session.commit()
+        session.flush()
         for ml_task in ml_tasks:
             session.refresh(ml_task)
         return ml_tasks
@@ -42,7 +42,6 @@ def add_ml_tasks(ml_tasks: Iterable[MLTask], session: Session) -> Iterable[MLTas
 def delete_ml_task(ml_task: MLTask, session: Session):
     try:
         session.delete(ml_task)
-        session.commit()
     except Exception:
         session.rollback()
         raise
@@ -51,7 +50,6 @@ def delete_ml_tasks(ml_tasks: Iterable[MLTask], session: Session):
     try:
         for ml_task in ml_tasks:
             session.delete(ml_task)
-        session.commit()
     except Exception:
         session.rollback()
         raise

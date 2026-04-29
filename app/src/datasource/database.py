@@ -68,11 +68,13 @@ def populate_db(engine: Engine):
         ml_models = [ml_model_1, ml_model_2, ml_model_3]
         with Session(engine) as session:
             add_ml_models(ml_models, session)
+            session.commit()
 
         # пользователь с ролю админа
         admin = User(name='Admin', email='admin@admins.ml', role=UserRole.ADMIN, auth=UserAuth(login='admin', pwd_hash='admin'))
         with Session(engine) as session:
             add_user(admin, session)
+            session.commit()
 
         # пользователи
         first_user = User(name='First User', email='first@users.ml', role=UserRole.USER, auth=UserAuth(login='first', pwd_hash='qwerty'), balance=150)
@@ -81,6 +83,7 @@ def populate_db(engine: Engine):
         ml_users = [first_user, second_user, third_user]
         with Session(engine) as session:
             add_users(ml_users, session)
+            session.commit()
 
         # транзакции
         deposit_01 = Transaction(user=first_user, type=TransactionType.DEPOSIT, status=TransactionStatus.COMPLETED, amount=100, balance=150)
@@ -99,6 +102,7 @@ def populate_db(engine: Engine):
                         withdraw_01, withdraw_02, withdraw_03, withdraw_04, withdraw_05, withdraw_06, withdraw_07]
         with Session(engine) as session:
             add_transactions(transactions, session)
+            session.commit()
 
         # задачи для МЛ Модели
         task_01 = MLTask(user=first_user, ml_model=ml_model_1, request="request of first user", transaction=withdraw_01, status=MLTaskStatus.FAILED)
@@ -112,6 +116,7 @@ def populate_db(engine: Engine):
         ml_tasks = [task_01, task_02, task_03, task_04, task_05, task_06, task_07]
         with Session(engine) as session:
             add_ml_tasks(ml_tasks, session)
+            session.commit()
 
         # предсказания
         prediction_01 = Prediction(result='prediction 01', ml_task=task_02, cost=1.75)
@@ -121,11 +126,13 @@ def populate_db(engine: Engine):
         predictions = [prediction_01, prediction_02, prediction_03]
         with Session(engine) as session:
             add_predictions(predictions, session)
+            session.commit()
 
         with Session(engine) as session:
             add_ml_tasks(ml_tasks, session)
             users = get_all_users(session)
             logging.info(f"number of users: {len(users)}")
+            session.commit()
 
     except Exception:
         raise

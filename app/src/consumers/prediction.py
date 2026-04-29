@@ -1,12 +1,16 @@
 import json
 import logging
+import math
 import threading
 import time
+from decimal import Decimal
+
 from sqlalchemy import Engine
 import services.repository.ml_model
 import services.repository.ml_task
 import services.repository.prediction
 import services.repository.transaction
+import services.repository.user
 from pika import ConnectionParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exceptions import AMQPConnectionError
@@ -36,64 +40,60 @@ class PredictionConsumer:
         self._stop_event = threading.Event()
         self.queue=get_queue_predictions()
 
-    def _callback(self, channel: BlockingChannel, method: Basic.Deliver, properties: BasicProperties, body: bytes):
+    def _callback(self, channel, method, properties, body: bytes):
+        logger.info("getting message")
         try:
-            data: dict = json.loads(body.decode("utf-8"))
+            data = json.loads(body.decode("utf-8"))
+
+            logger.info(data)
 
             ml_task_id = data.get("ml_task_id")
-            if not ml_task_id or not isinstance(ml_task_id, int):
-                channel.basic_ack(delivery_tag=method.delivery_tag)
+            if not isinstance(ml_task_id, int):
+                channel.basic_ack(method.delivery_tag)
+                logger.info("it is not ML task message")
                 return
 
-            ml_task_id = int(ml_task_id)
-            status = MLTaskStatus(data.get("status"))
-            duration_ms = data.get("duration_ms")
-            result = data.get("prediction")
-            failure = data.get("failure")
-            ml_model_id = None
-            user_id = None
+            raw_status = data.get("status")
+            try:
+                received_status = MLTaskStatus(raw_status)
+            except Exception:
+                logger.error("Unknown status: %r", raw_status)
+                channel.basic_ack(method.delivery_tag)
+                return
 
             with Session(self._engine) as session:
                 ml_task = services.repository.ml_task.get_ml_task_by_id(ml_task_id, session)
-                ml_model_id = ml_task.ml_model_id
-                user_id = ml_task.user_id
-                ml_task.status = status
-                ml_task.failure = failure
-                if duration_ms and isinstance(duration_ms, int):
-                    ml_task.duration_ms = int(duration_ms)
-                logger.info(f"ML task status received ml_task_id={ml_task_id} → {status}")
+                ml_task.status = received_status
+                ml_task.failure = data.get("failure")
+                ml_task.duration_ms = math.ceil(data.get("duration_ms"))
+
+                logger.info(f"ML task status received ml_task_id={ml_task_id} → {received_status}")
                 services.repository.ml_task.add_ml_task(ml_task, session)
 
-            if status == MLTaskStatus.COMPLETED:
-                with Session(self._engine) as session:
-                    logger.info(f"prediction received ml_task_id={ml_task_id}: '{result}'")
+                if received_status == MLTaskStatus.COMPLETED:
+                    if not services.repository.prediction.exists_for_task(ml_task, session):
+                        ml_model = services.repository.ml_model.get_ml_model_by_ml_task(ml_task, session)
+                        user = services.repository.user.get_user_by_ml_task(ml_task, session)
 
-                    ml_task = services.repository.ml_task.get_ml_task_by_id(ml_task_id, session)
-                    ml_model = services.repository.ml_model.get_ml_model_by_id(ml_model_id, session)
-                    user = services.repository.user.get_user_by_id(user_id, session)
-                    cost = ml_model.prediction_cost
-
-                    try:
-                        prediction = Prediction(result=result, ml_task=ml_task, cost=cost)
+                        prediction = Prediction(result=data.get("prediction"), ml_task=ml_task, cost=ml_model.prediction_cost)
                         services.repository.prediction.add_prediction(prediction, session)
 
-                        withdraw = Transaction(user=user, type=TransactionType.WITHDRAW, amount=cost)
+                        withdraw = Transaction(user=user, ml_task=ml_task, type=TransactionType.WITHDRAW, amount=ml_model.prediction_cost)
+                        logger.info(f"create transaction: {withdraw}")
                         services.repository.transaction.add_transaction(withdraw, session)
-                        logger.info(f"withdraw prediction cost: {cost}")
-
-                        services.repository.transaction.apply_transaction(withdraw, session)
                         logger.info(f"apply transaction: {withdraw}")
-                    except Exception as e:
-                        logger.error(f"{e}")
-                        session.rollback()
+                        services.repository.transaction.apply_transaction(withdraw, session)
+                        logger.info(f"user {user} transaction: {withdraw}")
+                elif received_status == MLTaskStatus.FAILED:
+                    logger.info(f"prediction failure ml_task_id={ml_task_id}: '{ml_task.failure}'")
 
-            elif status == MLTaskStatus.FAILED:
-                logger.info(f"prediction failure ml_task_id={ml_task_id}: '{failure}'")
+                session.commit()
 
-            channel.basic_ack(delivery_tag=method.delivery_tag)
+            channel.basic_ack(method.delivery_tag)
+
         except Exception as e:
-            logger.error(f"Error processing prediction message: {e}", exc_info=True)
-            channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            logger.error("Error processing message: %s", e, exc_info=True)
+            channel.basic_nack(method.delivery_tag, requeue=True)
 
     def _consume(self):
         while not self._stop_event.is_set():

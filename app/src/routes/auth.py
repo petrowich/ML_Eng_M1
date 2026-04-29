@@ -1,5 +1,7 @@
 import logging
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import Session
+
 import services.repository.user
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,33 +24,27 @@ AUTH_TOKEN_COOKIE_NAME = settings.auth_token_cookie_name()
 
 
 @auth_ui_route.post("/token")
-async def login_for_access_token(response: Response, form_data: OAuth2PasswordRequestForm=Depends(), session=Depends(get_session)) -> dict[str, str]:
-    try:
-        user = services.repository.user.get_user_by_login(form_data.username, session)
+async def login_for_access_token(response: Response, form_data: OAuth2PasswordRequestForm=Depends(), session: Session = Depends(get_session)) -> dict[str, str]:
+    user = services.repository.user.get_user_by_login(form_data.username, session)
 
-        if not user:
-            user = services.repository.user.get_user_by_email(form_data.username, session)
+    if not user:
+        user = services.repository.user.get_user_by_email(form_data.username, session)
 
-        if not user:
-            logger.warning(f"Trying to get access token by non-existent login name or email: '{form_data.username}'")
-            raise HTTPException(status_code=status.HTTP_401, detail="Wrong login name or email")
+    if not user:
+        logger.warning(f"Trying to get access token by non-existent login name or email: '{form_data.username}'")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong login name or email")
 
-        user_auth = user.auth
-        password_hash = create_hash(form_data.password)
+    user_auth = user.auth
 
-        if not user_auth or verify_hash(user_auth.pwd_hash, password_hash):
-            logger.warning(f"Trying to get access token with wrong credentials")
+    if not user_auth or not verify_hash(form_data.password, user_auth.pwd_hash):
+        logger.warning(f"Trying to get access token with wrong credentials")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Wrong credentials")
 
-            raise HTTPException(status_code=status.HTTP_403, detail="Wrong credentials")
+    access_token = create_access_token(user_auth.login)
+    response.set_cookie(key=AUTH_TOKEN_COOKIE_NAME, value=f"Bearer {access_token}", httponly=True)
 
-        access_token = create_access_token(user_auth.login)
-        response.set_cookie(key=AUTH_TOKEN_COOKIE_NAME, value=f"Bearer {access_token}", httponly=True)
-
-        return {AUTH_TOKEN_COOKIE_NAME: access_token, "token_type": "bearer"}
-
-    except Exception as e:
-        logger.error(f"Error getting access token: '{str(e)}'")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get access token")
+    session.commit()
+    return {AUTH_TOKEN_COOKIE_NAME: access_token, "token_type": "bearer"}
 
 @auth_ui_route.get("/signup", response_class=HTMLResponse)
 async def signup_get(request: Request):
@@ -61,12 +57,11 @@ async def signup_get(request: Request):
 
 @auth_ui_route.post("/signup", response_class=HTMLResponse)
 async def signup_post(request: Request,
-                      response: Response,
                       login: str = Form(...),
                       email: str = Form(...),
                       password: str = Form(...),
                       password_confirm: str = Form(...),
-                      session=Depends(get_session)):
+                      session: Session = Depends(get_session)):
     try:
         if password != password_confirm:
             error_msg = "Passwords do not match"
@@ -93,9 +88,10 @@ async def signup_post(request: Request,
 
         password_hash = create_hash(password)
         user_auth = UserAuth(login=login, pwd_hash=password_hash)
-        user = User(auth=user_auth, email=email)
+        user = User(auth=user_auth, email=email, name=login)
         services.repository.user.add_user(user, session)
 
+        session.commit()
         logger.info(f"New user with login '{login}' created")
 
         access_token = create_access_token(user_auth.login)
@@ -122,7 +118,7 @@ async def login_get(request: Request):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get login page")
 
 @auth_ui_route.post("/login", response_class=HTMLResponse)
-async def login_post(request: Request, session=Depends(get_session)):
+async def login_post(request: Request, session: Session = Depends(get_session)):
     try:
         form = LoginForm(request)
         await form.load_data()
@@ -131,19 +127,20 @@ async def login_post(request: Request, session=Depends(get_session)):
                 response = RedirectResponse("/", status.HTTP_302_FOUND)
                 await login_for_access_token(response=response, form_data=form, session=session)
                 logger.info("Login successful!!!!")
+                session.commit()
                 return response
             except HTTPException as e:
                 error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
                 logger.error(f"Login failed: {error_msg}")
-                return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": f"Login failed: {error_msg}", "back_url": "/auth/login"})
+                return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": "Login failed!", "error_msg": error_msg, "back_url": "/auth/login"})
         else:
             error_msg = " ".join(form.errors) if form.errors else "Invalid form data."
             logger.error(f"Invalid form: {error_msg}")
-            return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": f"Login failed: {error_msg}", "back_url": "/auth/login"})
+            return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": "Login failed!", "error_msg": error_msg, "back_url": "/auth/login"})
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Unexpected error during login: {error_msg}")
-        return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": f"Login failed: {error_msg}", "back_url": "/auth/login"})
+        return templates.TemplateResponse(request=request, name="error.html", context={"request": request, "error": "Login failed!", "error_msg": error_msg, "back_url": "/auth/login"})
 
 @auth_ui_route.get("/logout", response_class=HTMLResponse)
 async def login_get():

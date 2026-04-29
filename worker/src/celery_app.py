@@ -12,7 +12,7 @@ logging.basicConfig(level=settings.log_level)
 app = Celery(
     settings.APP_NAME,
     broker=get_amqp_url(),
-    backend='rpc://',
+    # backend='rpc://',
     include=['processing'],
     task_default_queue=get_queue_ml_tasks(),
     accept_content=['application/json', 'text/plain'],

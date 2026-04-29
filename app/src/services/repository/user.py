@@ -1,6 +1,9 @@
 from typing import Iterable, Optional, Sequence
 from sqlalchemy import Row
 from sqlmodel import Session, select
+
+from models.ml_task import MLTask
+from models.transaction import Transaction
 from models.user import User, UserAuth
 
 
@@ -17,7 +20,7 @@ def get_user_by_id(user_id: int, session: Session) -> User:
 def add_user(user: User, session: Session) -> User:
     try:
         session.add(user)
-        session.commit()
+        session.flush()
         session.refresh(user)
         return user
     except Exception:
@@ -27,7 +30,7 @@ def add_user(user: User, session: Session) -> User:
 def add_users(users: Iterable[User], session: Session) -> Iterable[User]:
     try:
         session.add_all([user for user in users])
-        session.commit()
+        session.flush()
         for user in users:
             session.refresh(user)
         return users
@@ -38,7 +41,7 @@ def add_users(users: Iterable[User], session: Session) -> Iterable[User]:
 def delete_user(user: User, session: Session):
     try:
         session.delete(user)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -47,7 +50,7 @@ def delete_users(users: Iterable[User], session: Session):
     try:
         for user in users:
             session.delete(user)
-        session.commit()
+            session.flush()
     except Exception:
         session.rollback()
         raise
@@ -83,7 +86,7 @@ def get_user_by_login(login, session: Session) -> Optional[User]:
 def update_password_hash(auth: UserAuth, session: Session):
     try:
         session.add(auth)
-        session.commit()
+        session.flush()
     except Exception:
         session.rollback()
         raise
@@ -108,4 +111,26 @@ def get_user_auth_by_email(email, session: Session) -> Optional[UserAuth]:
         return user_auth
     except Exception:
         session.rollback()
+        raise
+
+def get_user_by_ml_task(ml_task: MLTask, session: Session) -> Optional[User]:
+    try:
+        if ml_task.ml_model_id is not None:
+            stmt = select(User).where(User.id == ml_task.user_id)
+            ml_model = session.exec(stmt).first()
+            if ml_model and isinstance(ml_model, User):
+                return ml_model
+        return None
+    except Exception:
+        raise
+
+def get_user_by_ml_transaction(transaction: Transaction, session: Session) -> Optional[User]:
+    try:
+        if transaction.user_id is not None:
+            stmt = select(User).where(User.id == transaction.user_id)
+            ml_model = session.exec(stmt).first()
+            if ml_model and isinstance(ml_model, User):
+                return ml_model
+        return None
+    except Exception:
         raise

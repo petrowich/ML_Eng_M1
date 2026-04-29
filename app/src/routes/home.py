@@ -1,7 +1,6 @@
 import logging
 
-from starlette.responses import RedirectResponse
-from starlette.status import HTTP_303_SEE_OTHER
+from sqlmodel import Session
 
 import services.repository.user
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -24,7 +23,7 @@ templates = Jinja2Templates(directory="templates")
 AUTH_TOKEN_COOKIE_NAME = settings.auth_token_cookie_name()
 
 @home_route.get("/", response_class=HTMLResponse, summary="Home", description="Home page")
-async def index(request: Request, session=Depends(get_session)):
+async def index(request: Request, session: Session = Depends(get_session)):
     token = request.cookies.get(AUTH_TOKEN_COOKIE_NAME)
     login = None
     user_name = None
