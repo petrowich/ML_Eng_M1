@@ -22,6 +22,14 @@
                 <input type="email" id="email" name="email" class="input-field" value="{{ user.email | default('', true) }}" required>
             </div>
 
+            <div class="form-group">
+                <label for="role">Role:</label>
+                <select id="role" name="role" class="input-field">
+                    <option value="ADMIN" {% if user.role == 'ADMIN' %}selected{% endif %}>ADMIN</option>
+                    <option value="USER" {% if user.role == 'USER' %}selected{% endif %}>USER</option>
+                </select>
+            </div>
+
             <button type="submit" class="submit-button">Submit</button>
         </form>
     </div>

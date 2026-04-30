@@ -1,19 +1,22 @@
 import logging
+
+from sqlmodel import Session
+
 import services.repository.transaction
 import services.repository.ml_model
 import services.repository.ml_task
 import services.repository.prediction
 import services.repository.user
 import services.mq.ml_task
-from fastapi.security import OAuth2PasswordRequestForm
+import base64
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from decimal import Decimal
-from typing import List, Dict
-from fastapi import APIRouter, HTTPException, Body, Path
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Body, Path, Request
 from fastapi.params import Depends
 from starlette import status
 from auth.oauth2 import create_access_token
 from datasource.database import get_session
-from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_channel
 from models.ml_task import MLTask, MLTaskStatus
 from models.prediction import Prediction
 from models.transaction import Transaction, TransactionType
@@ -21,12 +24,13 @@ from models.user import User, UserAuth, UserRole
 from pydantic import Field, BaseModel
 from auth.hash import create_hash, verify_hash
 from auth.authenticate import authenticate
-
+from fastapi.security.utils import get_authorization_scheme_param
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 user_route = APIRouter()
+security = HTTPBasic()
 
 class UserSignupRequest(BaseModel):
     login: str = Field(..., description="User login")
@@ -36,13 +40,21 @@ class UserSignupRequest(BaseModel):
 class UserAuthResponse(BaseModel):
     message: str = Field(description="Response message")
 
+class UserSigninRequest(BaseModel):
+   username: str = Field(..., description="Login or email")
+   password: str = Field(..., description="Password")
+
+class TokenResponse(BaseModel):
+    access_token: str = Field(description="Access token")
+    token_type: str = "Bearer"
+
 @user_route.post("/signup",
                  response_model=UserAuthResponse,
                  status_code=status.HTTP_201_CREATED,
                  summary="User registration",
                  description="Register a new user")
 async def signup(request: UserSignupRequest = Body(...),
-                 session=Depends(get_session)) -> UserAuthResponse:
+                 session: Session = Depends(get_session)) -> UserAuthResponse:
     try:
         if services.repository.user.get_user_by_login(request.login, session):
             logger.warning(f"User login '{request.login}' already exists")
@@ -58,38 +70,67 @@ async def signup(request: UserSignupRequest = Body(...),
         services.repository.user.add_user(user, session)
 
         logger.info(f"New user with login '{request.login}' created")
+        session.commit()
 
         return UserAuthResponse(message="User created successfully")
     except Exception as e:
         logger.error(f"Error signup: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to signup")
 
+def optional_basic_credentials(request: Request) -> Optional[HTTPBasicCredentials]:
+    authorization: str = request.headers.get("Authorization")
+    if not authorization:
+        return None
+
+    scheme, param = get_authorization_scheme_param(authorization)
+    if scheme.lower() != "basic":
+        return None
+
+    try:
+        data = base64.b64decode(param).decode("ascii")
+        username, separator, password = data.partition(":")
+        if not separator:
+            return None
+        return HTTPBasicCredentials(username=username, password=password)
+    except Exception:
+        return None
+
 @user_route.post("/signin",
-                 response_model=UserAuthResponse,
+                 response_model=TokenResponse,
                  status_code=status.HTTP_200_OK,
                  summary="User authentication",
                  description="Authenticate user with provided credentials")
-async def signin(form_data: OAuth2PasswordRequestForm = Depends(), session=Depends(get_session)) -> Dict:
+async def signin(credentials: Optional[HTTPBasicCredentials] = Depends(optional_basic_credentials),
+                 request: Optional[UserSigninRequest] = Body(None),
+                 session = Depends(get_session)) -> TokenResponse:
+    if credentials is not None:
+        username = credentials.username
+        password = credentials.password
+    elif request is not None:
+        username = request.username
+        password = request.password
+    else:
+       raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide credentials via Basic Auth or JSON body")
+
     try:
-        user = services.repository.user.get_user_by_login(form_data.username, session)
+        user = services.repository.user.get_user_by_login(username, session)
 
         if not user:
-            user = services.repository.user.get_user_by_email(form_data.username, session)
+            user = services.repository.user.get_user_by_email(username, session)
 
         if not user:
-            logger.warning(f"Trying to sign in with non-existent login name or email: '{form_data.username}'")
-            raise HTTPException(status_code=status.HTTP_401, detail="Wrong login name or email")
+            logger.warning(f"Trying to sign in with non-existent login name or email: '{username}'")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong login name or email")
 
         user_auth = user.auth
-        password_hash = create_hash(form_data.password)
 
-        if not user_auth or verify_hash(user_auth.pwd_hash, password_hash):
-            logger.warning(f"Trying to sign in with wrong credentials")
-            raise HTTPException(status_code=status.HTTP_403, detail="Wrong credentials")
+        if not user_auth or not verify_hash(password, user_auth.pwd_hash):
+            logger.warning(f"Trying to signin with wrong credentials")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Wrong credentials")
 
         logger.info(f"Authenticated successfully: '{user}'")
         access_token = create_access_token(user_auth.login)
-        return {"access_token": access_token, "token_type": "Bearer"}
+        return TokenResponse(access_token=access_token)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -102,15 +143,24 @@ async def signin(form_data: OAuth2PasswordRequestForm = Depends(), session=Depen
                 summary="User",
                 description="Get user data by user id")
 async def get_user(user_id: int = Path(..., description="user id"),
-                   session=Depends(get_session), current_login=Depends(authenticate)) -> User:
+                   current_login = Depends(authenticate),
+                   session=Depends(get_session)) -> User:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         return user
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"get user error: '{str(e)}'")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to user by id")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user by id")
 
 class UserUpdateRequest(BaseModel):
     name: str = Field(max_length=255, description="User Name")
@@ -124,10 +174,16 @@ class UserUpdateRequest(BaseModel):
                  description="Update user data")
 async def update(user_id: int = Path(..., description="user id"),
                  request: UserUpdateRequest = Body(...),
-                 session=Depends(get_session), current_login=Depends(authenticate)) -> User:
+                 current_login = Depends(authenticate),
+                 session: Session = Depends(get_session)) -> User:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
 
         if user.email!=request.email and services.repository.user.get_user_by_email(request.email, session):
@@ -139,7 +195,11 @@ async def update(user_id: int = Path(..., description="user id"),
         user.role = request.role
         user = services.repository.user.add_user(user, session)
 
+        session.commit()
+
         return user
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error updating user: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to user update")
@@ -154,14 +214,23 @@ class BalanceResponse(BaseModel):
                 summary="User balance",
                 description="Get current user balance by user id")
 async def get_balance(user_id: int = Path(..., description="user id"),
-                      session=Depends(get_session), current_login=Depends(authenticate)) -> BalanceResponse:
+                      current_login = Depends(authenticate),
+                      session = Depends(get_session)) -> BalanceResponse:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         balance = user.balance if user.balance else Decimal(0.0)
         response = BalanceResponse(balance=float(balance))
         return response
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting balance: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve balance")
@@ -182,18 +251,30 @@ class DepositResponse(BaseModel):
                  description="Deposit funds by user id")
 async def deposit(user_id: int = Path(..., description="user id"),
                   request: DepositRequest = Body(...),
-                  session=Depends(get_session), current_login=Depends(authenticate)) -> DepositResponse:
+                  current_login = Depends(authenticate),
+                  session: Session = Depends(get_session)) -> DepositResponse:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         transaction = Transaction(user=user, type=TransactionType.DEPOSIT, amount=request.amount)
         services.repository.transaction.add_transaction(transaction, session)
         services.repository.transaction.apply_transaction(transaction, session)
         user = services.repository.user.get_user_by_id(user_id, session)
         balance = user.balance if user.balance else Decimal(0.0)
         response = DepositResponse(deposited=request.amount, balance=float(balance))
+
+        session.commit()
+
         return response
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error processing deposit: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to deposit funds")
@@ -203,12 +284,20 @@ async def deposit(user_id: int = Path(..., description="user id"),
                 status_code=status.HTTP_200_OK,
                 summary="All users",
                 description="List of all users")
-async def get_all_users(session=Depends(get_session), current_login=Depends(authenticate)) -> List[User]:
+async def get_all_users(current_login=Depends(authenticate), session=Depends(get_session)) -> List[User]:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         users = services.repository.user.get_all_users(session)
+
         return list(users)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting all users: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get all users")
@@ -219,13 +308,22 @@ async def get_all_users(session=Depends(get_session), current_login=Depends(auth
                 summary="User ML tasks",
                 description="List of user ML tasks")
 async def get_user_ml_tasks(user_id: int = Path(..., description="user id"),
-                             session=Depends(get_session), current_login=Depends(authenticate)) -> List[MLTask]:
+                             current_login = Depends(authenticate),
+                            session = Depends(get_session)) -> List[MLTask]:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         ml_task = services.repository.ml_task.get_ml_tasks_by_user(user, session)
         return list(ml_task)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting user ML tasks: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user ML tasks")
@@ -242,14 +340,18 @@ class CreateMLTaskRequest(BaseModel):
                   description="Create new ML task")
 async def create_ml_task(user_id: int = Path(..., description="user id"),
                          request: CreateMLTaskRequest = Body(...),
-                         session=Depends(get_session),
-                         queue_ml_tasks=Depends(get_queue_ml_tasks),
-                         queue_predictions=Depends(get_queue_predictions),
-                         channel=Depends(get_channel), current_login=Depends(authenticate)) -> MLTask:
+                         current_login = Depends(authenticate),
+                         session: Session = Depends(get_session)) -> MLTask:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
         if not ml_model:
@@ -266,7 +368,7 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
         ml_task = services.repository.ml_task.add_ml_task(MLTask(user=user, ml_model=ml_model, request=request.request), session)
 
         try:
-            correlation_id = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, channel)
+            correlation_id = services.mq.ml_task.publish_ml_task(ml_task)
             ml_task.status=MLTaskStatus.QUEUED
         except Exception as e:
             logger.error(f"Error processing ML task: '{str(e)}'")
@@ -275,7 +377,11 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
 
         ml_task = services.repository.ml_task.add_ml_task(ml_task, session)
 
+        session.commit()
+
         return ml_task
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating ML task: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create ML task")
@@ -286,13 +392,22 @@ async def create_ml_task(user_id: int = Path(..., description="user id"),
                 summary="User predictions",
                 description="List of user predictions")
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
-                               session=Depends(get_session), current_login=Depends(authenticate)) -> List[Prediction]:
+                               current_login = Depends(authenticate),
+                               session = Depends(get_session)) -> List[Prediction]:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
+
         predictions = services.repository.prediction.get_predictions_by_user(user, session)
         return list(predictions)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting user predictions: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user predictions")
@@ -303,13 +418,21 @@ async def get_user_predictions(user_id: int = Path(..., description="user id"),
                 summary="User transactions",
                 description="List of user transactions")
 async def get_user_predictions(user_id: int = Path(..., description="user id"),
-                               session=Depends(get_session), current_login=Depends(authenticate)) -> List[Transaction]:
+                               current_login = Depends(authenticate),
+                               session = Depends(get_session)) -> List[Transaction]:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         user = services.repository.user.get_user_by_id(user_id, session)
         transactions = services.repository.transaction.get_transactions_by_user(user, session)
         return list(transactions)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting user transactions: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user transactions")

@@ -3,11 +3,10 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-
 from starlette.responses import RedirectResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.status import HTTP_303_SEE_OTHER
-
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from datasource.config import get_settings
 from datasource.database import init_db
 from datasource.rabbitmq import declare_queue, get_queue_ml_tasks
@@ -68,6 +67,8 @@ app = FastAPI(
     lifespan=lifespan
     )
 
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -111,4 +112,6 @@ if __name__ == '__main__':
         reload=True,
         workers=1,
         log_level="debug",
+        proxy_headers=True,
+        forwarded_allow_ips='*'
     )

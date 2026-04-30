@@ -34,9 +34,6 @@ def test_submit_task_unauthorized_redirects_to_login(client, app):
 def test_submit_task_authorized_success_redirects_303_and_sets_task_queued(client, app, session):
     from auth.oauth2 import get_current_user
     app.dependency_overrides[get_current_user] = lambda: None
-    import routes.ml_model as routes_ml_module
-    app.dependency_overrides[routes_ml_module.get_queue_ml_tasks] = lambda: "test_ml_tasks"
-    app.dependency_overrides[routes_ml_module.get_queue_predictions] = lambda: "test_predictions"
     from datasource.rabbitmq import get_channel
     app.dependency_overrides[get_channel] = lambda: FakeBlockingChannel()
     user = User(email="user@example.test", name="User", balance=Decimal("100.00"), auth=UserAuth(login="test_login", pwd_hash="hash"))

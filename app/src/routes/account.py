@@ -11,7 +11,7 @@ from auth.oauth2 import get_current_user
 from datasource.config import get_settings
 from datasource.database import get_session
 from models.transaction import Transaction, TransactionType
-from models.user import User
+from models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ async def profile_post(
     request: Request,
     name: str = Form(...),
     email: str = Form(...),
+    role: str = Form(...),
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -69,10 +70,12 @@ async def profile_post(
                                                   name="error.html",
                                                   context={"request": request, "error": "Email is already in use", "back_url": "/profile"}
                                                   )
+
         current_user.name = name
         current_user.email = email
-        services.repository.user.add_user(current_user, session)
+        current_user.role = UserRole(role)
 
+        services.repository.user.add_user(current_user, session)
         session.commit()
 
         context = {"request": request,
