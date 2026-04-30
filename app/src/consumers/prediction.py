@@ -3,7 +3,6 @@ import logging
 import math
 import threading
 import time
-from decimal import Decimal
 
 from sqlalchemy import Engine
 import services.repository.ml_model
@@ -14,7 +13,6 @@ import services.repository.user
 from pika import ConnectionParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.exceptions import AMQPConnectionError
-from pika.spec import Basic, BasicProperties
 from sqlmodel import Session, create_engine
 from datasource.config import get_settings
 from datasource.rabbitmq import get_queue_predictions, declare_queue

@@ -1,6 +1,10 @@
 import logging
-from decimal import Decimal
+
+from sqlmodel import Session
+
 import services.repository.ml_model
+import services.repository.user
+from decimal import Decimal
 from typing import List
 from fastapi import APIRouter, HTTPException, Body, Path
 from fastapi.params import Depends
@@ -25,10 +29,18 @@ model_route = APIRouter()
 async def get_ml_model(model_id: int = Path(..., description="model id"),
                       session=Depends(get_session), current_login = Depends(authenticate)) -> MLModel:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         ml_model = services.repository.ml_model.get_ml_model_by_id(model_id, session)
+
         return ml_model
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting ML model: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get the ML model by id")
@@ -45,10 +57,16 @@ class RegisterMLModelRequest(BaseModel):
                   status_code=status.HTTP_201_CREATED,
                   summary="Register ML Model",
                   description="Register new or update existent ML model")
-async def register_ml_model(request: RegisterMLModelRequest = Body(...), session=Depends(get_session), current_login = Depends(authenticate)) -> MLModel:
+async def register_ml_model(request: RegisterMLModelRequest = Body(...),
+                            current_login = Depends(authenticate),
+                            session: Session = Depends(get_session),) -> MLModel:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
 
         ml_model = services.repository.ml_model.get_ml_model_by_reference(request.model, session)
 
@@ -61,7 +79,11 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
 
         ml_model = services.repository.ml_model.add_ml_model(ml_model, session)
 
+        session.commit()
+
         return ml_model
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error registering ML model: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to registere ML model")
@@ -73,11 +95,18 @@ async def register_ml_model(request: RegisterMLModelRequest = Body(...), session
                 description="List of all ML models")
 async def get_all(session=Depends(get_session), current_login = Depends(authenticate)) -> List[MLModel]:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
 
         ml_models = services.repository.ml_model.get_all_ml_models(session)
+
         return list(ml_models)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting all ML models: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get all ML models")

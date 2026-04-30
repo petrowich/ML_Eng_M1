@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 from pika import BlockingConnection
-from pika.adapters.blocking_connection import BlockingChannel
+from contextlib import contextmanager
 from datasource.config import get_settings
 
 settings = get_settings()
@@ -12,19 +12,20 @@ logging.getLogger("pika.channel").setLevel(logging.WARNING)
 logging.getLogger("pika.connection").setLevel(logging.WARNING)
 logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
 
-_connection = None
-
 def get_connection() -> BlockingConnection:
-    global _connection
+    return BlockingConnection(settings.pika_connection_parameters)
 
-    if _connection is None or _connection.is_closed:
-        _connection = BlockingConnection(settings.pika_connection_parameters)
-
-    return _connection
-
-def get_channel() -> BlockingChannel:
+@contextmanager
+def get_channel():
     connection = get_connection()
-    return connection.channel()
+    channel = connection.channel()
+    try:
+        yield channel
+    finally:
+        try:
+            channel.close()
+        finally:
+            connection.close()
 
 def get_queue_ml_tasks() -> str:
     return settings.QUEUE_ML_TASKS or 'ML_Tasks'

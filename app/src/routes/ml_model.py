@@ -1,4 +1,5 @@
 import logging
+import time
 from decimal import Decimal
 from typing import List, Dict, Sequence
 from sqlmodel import Session
@@ -13,7 +14,6 @@ from fastapi.responses import HTMLResponse
 from auth.oauth2 import get_current_user
 from datasource.config import get_settings
 from datasource.database import get_session
-from datasource.rabbitmq import get_queue_ml_tasks, get_queue_predictions, get_channel
 from models.ml_model import MLModel
 from models.ml_task import MLTask, MLTaskStatus
 from models.user import User
@@ -51,9 +51,7 @@ async def submit_task(request: Request,
                                 text: str = Form(...),
                                 current_user: User = Depends(get_current_user),
                                 session: Session =Depends(get_session),
-                                queue_ml_tasks=Depends(get_queue_ml_tasks),
-                                queue_predictions=Depends(get_queue_predictions),
-                                channel=Depends(get_channel)):
+                      ):
     if not current_user:
         return RedirectResponse("/auth/login/", status_code=302)
     login = current_user.auth.login
@@ -78,18 +76,23 @@ async def submit_task(request: Request,
 
         session.commit()
 
-        try:
-            correlation_id = services.mq.ml_task.process_ml_task(ml_task, queue_ml_tasks, queue_predictions, channel)
-            ml_task.status=MLTaskStatus.QUEUED
-            services.repository.ml_task.add_ml_task(ml_task, session)
-            session.commit()
-            logger.info(f"Queued ML task {ml_task.ml_model.reference} {ml_task.request} to {queue_ml_tasks}")
-        except Exception as e:
-            logger.error(f"Error processing ML task: '{str(e)}'")
-            ml_task.status=MLTaskStatus.FAILED
-            services.repository.ml_task.add_ml_task(ml_task, session)
-            session.commit()
-            raise e
+        for attempt in range(1, 4):
+            try:
+                correlation_id = services.mq.ml_task.publish_ml_task(ml_task)
+                break
+            except Exception as e:
+                if attempt >= 3:
+                    logger.error(f"Error processing ML task: '{str(e)}'")
+                    ml_task.status=MLTaskStatus.FAILED
+                    services.repository.ml_task.add_ml_task(ml_task, session)
+                    session.commit()
+                    raise
+                time.sleep(0.3 * attempt)
+
+        ml_task.status=MLTaskStatus.QUEUED
+        services.repository.ml_task.add_ml_task(ml_task, session)
+        session.commit()
+        logger.info(f"Queued ML task {ml_task.ml_model.reference} {ml_task.request}")
 
         return RedirectResponse(url="/ml_tasks", status_code=status.HTTP_303_SEE_OTHER)
 

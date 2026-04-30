@@ -1,6 +1,10 @@
 import logging
 import uuid
+
+from sqlmodel import Session
+
 import services.repository.transaction
+import services.repository.user
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.params import Depends
 from starlette import status
@@ -21,13 +25,21 @@ transaction_route = APIRouter()
                 summary="Transaction",
                 description="Get transaction data by transaction id")
 async def get_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
+                          current_login = Depends(authenticate),
+                          session: Session = Depends(get_session)) -> Transaction:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         return transaction
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting transaction: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get the transaction")
@@ -38,14 +50,25 @@ async def get_transaction(transaction_id: str = Path(..., description="transacti
                 summary="Apply transaction",
                 description="Apply pending transaction")
 async def apply_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
+                            current_login = Depends(authenticate),
+                            session: Session = Depends(get_session)) -> Transaction:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.apply_transaction(transaction, session)
+
+        session.commit()
+
         return transaction
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error applying transaction: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to apply transaction: {str(e)}")
@@ -56,14 +79,25 @@ async def apply_transaction(transaction_id: str = Path(..., description="transac
                 summary="Cancel transaction",
                 description="Cancel pending transaction")
 async def cancel_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
+                             current_login = Depends(authenticate),
+                             session: Session = Depends(get_session)) -> Transaction:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.cancel_transaction(transaction, session)
+
+        session.commit()
+
         return transaction
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error cancelling transaction: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to cancel transaction: {str(e)}")
@@ -74,14 +108,25 @@ async def cancel_transaction(transaction_id: str = Path(..., description="transa
                 summary="Refund transaction",
                 description="Refund completed transaction")
 async def refund_transaction(transaction_id: str = Path(..., description="transaction id"),
-                      session=Depends(get_session), current_login = Depends(authenticate)) -> Transaction:
+                             current_login = Depends(authenticate),
+                             session: Session = Depends(get_session)) -> Transaction:
     try:
-        if not current_login or current_login.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        if current_login:
+            current_user = services.repository.user.get_user_by_login(current_login, session)
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="no rights")
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no login")
+
         transaction_uuid = uuid.UUID(transaction_id)
         transaction = services.repository.transaction.get_transaction_by_id(transaction_uuid, session)
         transaction = services.repository.transaction.refund_transaction(transaction, session)
+
+        session.commit()
+
         return transaction
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error refunding transaction: '{str(e)}'")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to refund transaction: {str(e)}")

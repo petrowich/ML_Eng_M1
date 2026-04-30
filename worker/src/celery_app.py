@@ -1,4 +1,3 @@
-import json
 import logging
 from celery import Celery
 from datasource.config import get_settings
@@ -17,10 +16,15 @@ app = Celery(
     task_default_queue=get_queue_ml_tasks(),
     accept_content=['application/json', 'text/plain'],
     task_serializer='json',
-    result_serializer='json'
+    result_serializer='json',
+    task_acks_late=False,
+    worker_prefetch_multiplier=1,
+    task_reject_on_worker_lost=True,
+    worker_send_task_events=True,
+    task_track_started=True,
 )
 
-if __name__ == '__main__':
-    from processing import process_ml_task
-    message = json.dumps({"task_id": 1001, "model": "MODEL_TEST", "request": "test request"})
-    process_ml_task.delay(message)
+app.conf.update(
+    broker_pool_limit=1,
+    worker_max_tasks_per_child=10,
+)
